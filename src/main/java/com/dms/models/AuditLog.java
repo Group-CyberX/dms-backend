@@ -3,25 +3,27 @@ import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.UUID;
+
 
 @Entity
 @Table(name = "audit_logs")
 public class AuditLog {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long log_id;
-    private Long user_id;
+    private UUID log_id;
+    private UUID user_id;
     private String action;
-    private Long entity_id;
+    private UUID entity_id;
     private LocalDateTime timestamp;
 
     public AuditLog() {}
 
     public AuditLog(
-            Long log_id,
-            Long user_id,
+            UUID log_id,
+            UUID user_id,
             String action,
-            Long entity_id,
+            UUID entity_id,
             LocalDateTime timestamp
     ) {
         this.log_id = log_id;
@@ -31,19 +33,19 @@ public class AuditLog {
         this.timestamp = timestamp;
     }
 
-    public Long getLog_id() {
+    public UUID getLog_id() {
         return log_id;
     }
 
-    public void setLog_id(Long log_id) {
+    public void setLog_id(UUID log_id) {
         this.log_id = log_id;
     }
 
-    public Long getUser_id() {
+    public UUID getUser_id() {
         return user_id;
     }
 
-    public void setUser_id(Long user_id) {
+    public void setUser_id(UUID user_id) {
         this.user_id = user_id;
     }
 
@@ -55,11 +57,11 @@ public class AuditLog {
         this.action = action;
     }
 
-    public Long getEntity_id() {
+    public UUID getEntity_id() {
         return entity_id;
     }
 
-    public void setEntity_id(Long entity_id) {
+    public void setEntity_id(UUID entity_id) {
         this.entity_id = entity_id;
     }
 
