@@ -8,7 +8,8 @@ import com.dms.models.DocumentMetadata;
 
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+
+
 import java.util.UUID;
 
 @Service
@@ -36,10 +37,7 @@ public class MetadataService {
         return metadataRepository.save(metadata);
     }
 
-    public List<DocumentMetadata> getMetadataByDocument(UUID documentId) {
-
-        return metadataRepository.findByDocument_DocumentId(documentId);
-    }
+    
 
     public DocumentMetadata updateMetadata(UUID metadataId, MetadataDTO dto) {
 
@@ -56,4 +54,8 @@ public class MetadataService {
 
         metadataRepository.deleteById(metadataId);
     }
+
+    
+
+
 }

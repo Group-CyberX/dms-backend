@@ -1,5 +1,6 @@
 package com.dms.models;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.util.UUID;
@@ -19,6 +20,7 @@ public class DocumentMetadata {
     @Column(name = "value")
     private String value;
 
+    @JsonBackReference
     @ManyToOne
     @JoinColumn(name = "document_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

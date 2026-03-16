@@ -6,7 +6,7 @@ import com.dms.service.MetadataService;
 
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+
 import java.util.UUID;
 
 @RestController
@@ -25,11 +25,7 @@ public class MetadataController {
         return metadataService.addMetadata(dto);
     }
 
-    @GetMapping("/{documentId}")
-    public List<DocumentMetadata> getMetadata(@PathVariable UUID documentId) {
-
-        return metadataService.getMetadataByDocument(documentId);
-    }
+    
 
     @PutMapping("/{metadataId}")
     public DocumentMetadata updateMetadata(@PathVariable UUID metadataId,
@@ -43,4 +39,6 @@ public class MetadataController {
 
         metadataService.deleteMetadata(metadataId);
     }
+
+    
 }
