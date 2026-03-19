@@ -2,6 +2,7 @@ package com.dms.rest;
 
 import com.dms.models.AuditLog;
 import com.dms.service.AuditLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,7 +22,13 @@ public class AdminAuditController {
     }
 
     @PostMapping("/logs")
-    public AuditLog newLog(@RequestBody AuditLog auditLog){
+    public AuditLog newLog(@RequestBody AuditLog auditLog, HttpServletRequest request){
+        auditLog.setIp(request.getRemoteAddr());
+
+        if (auditLog.getStatus()==null || auditLog.getStatus().isEmpty()){
+            auditLog.setStatus("Failed");
+        }
+
         return auditLogService.saveLog(auditLog);
     }
 }

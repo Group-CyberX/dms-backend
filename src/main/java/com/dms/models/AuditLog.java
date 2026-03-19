@@ -16,6 +16,8 @@ public class AuditLog {
     private String action;
     private UUID entity_id;
     private LocalDateTime timestamp;
+    private String ip;
+    private String status;
 
     public AuditLog() {}
 
@@ -24,13 +26,17 @@ public class AuditLog {
             UUID user_id,
             String action,
             UUID entity_id,
-            LocalDateTime timestamp
+            LocalDateTime timestamp,
+            String ip,
+            String status
     ) {
         this.log_id = log_id;
         this.user_id = user_id;
         this.action = action;
         this.entity_id = entity_id;
         this.timestamp = timestamp;
+        this.ip = ip;
+        this.status = status;
     }
 
     public UUID getLog_id() {
@@ -73,15 +79,22 @@ public class AuditLog {
         this.timestamp = timestamp;
     }
 
+    public String getIp() {
+            return ip;
+    }
+    public void setIp(String ip) {this.ip = ip;}
+    public String getStatus() {return status;}
+    public void setStatus(String status) {this.status = status;}
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         AuditLog auditLog = (AuditLog) o;
-        return Objects.equals(log_id, auditLog.log_id) && Objects.equals(user_id, auditLog.user_id) && Objects.equals(action, auditLog.action) && Objects.equals(entity_id, auditLog.entity_id) && Objects.equals(timestamp, auditLog.timestamp);
+        return Objects.equals(log_id, auditLog.log_id) && Objects.equals(user_id, auditLog.user_id) && Objects.equals(action, auditLog.action) && Objects.equals(entity_id, auditLog.entity_id) && Objects.equals(timestamp, auditLog.timestamp) && Objects.equals(ip, auditLog.ip) && Objects.equals(status, auditLog.status);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(log_id, user_id, action, entity_id, timestamp);
+        return Objects.hash(log_id, user_id, action, entity_id, timestamp, ip, status);
     }
 }

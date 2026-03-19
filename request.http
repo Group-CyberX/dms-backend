@@ -19,3 +19,21 @@ Content-Type: application/json
   "action": "CREATE_DOCUMENT",
   "entity_id": "4fa85f64-5717-4562-b3fc-2c963f66afa7"
 }
+###
+POST http://localhost:8080/admin/logs
+Content-Type: application/json
+
+{
+  "user_id": "a3f1c9e2-7b44-4d8a-9c1f-2b8e6d5f1234",
+  "action": "LOGIN",
+  "entity_id": "1fa85f64-5717-4562-b3fc-2c963f66aaa1"
+}
+###
+POST http://localhost:8080/admin/logs
+Content-Type: application/json
+
+{
+  "user_id": "a3f1c9e2-7b44-4d8a-9c1f-2b8e6d5f1234",
+  "action": "LOGOUT",
+  "entity_id": "4fa85f64-5717-4562-b3fc-2c963f66ddd4"
+}

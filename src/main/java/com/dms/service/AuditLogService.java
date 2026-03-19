@@ -15,8 +15,8 @@ public class AuditLogService {
         this.auditLogRepository = auditLogRepository;
     }
 
-    public void LogAudit(UUID log_id, UUID user_id, UUID entity_id, String action) {
-        AuditLog auditLog = new AuditLog(log_id, user_id, action, entity_id, LocalDateTime.now());
+    public void LogAudit(UUID log_id, UUID user_id, UUID entity_id, String action,String ip_address,String status) {
+        AuditLog auditLog = new AuditLog(log_id, user_id, action, entity_id, LocalDateTime.now(),ip_address,status);
         auditLogRepository.save(auditLog);
     }
 
