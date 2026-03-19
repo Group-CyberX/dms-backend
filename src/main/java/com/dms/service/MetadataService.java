@@ -3,7 +3,7 @@ package com.dms.service;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.MetadataRepository;
 import com.dms.dto.MetadataDTO;
-import com.dms.models.Document;
+import com.dms.models.Documents;
 import com.dms.models.DocumentMetadata;
 
 import org.springframework.stereotype.Service;
@@ -26,7 +26,7 @@ public class MetadataService {
 
     public DocumentMetadata addMetadata(MetadataDTO dto) {
 
-        Document document = documentRepository.findById(dto.getDocumentId())
+        Documents document = documentRepository.findById(dto.getDocumentId())
                 .orElseThrow(() -> new RuntimeException("Document not found"));
 
         DocumentMetadata metadata = new DocumentMetadata();

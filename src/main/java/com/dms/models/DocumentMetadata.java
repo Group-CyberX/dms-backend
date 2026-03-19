@@ -24,7 +24,7 @@ public class DocumentMetadata {
     @ManyToOne
     @JoinColumn(name = "document_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-    private Document document;
+    private Documents document;
 
     public UUID getMetadataId() {
         return metadataId;
@@ -46,11 +46,11 @@ public class DocumentMetadata {
         this.value = value;
     }
 
-    public Document getDocument() {
+    public Documents getDocument() {
         return document;
     }
 
-    public void setDocument(Document document) {
+    public void setDocument(Documents document) {
         this.document = document;
     }
 }
