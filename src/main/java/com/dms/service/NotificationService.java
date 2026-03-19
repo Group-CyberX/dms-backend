@@ -22,18 +22,17 @@ public class NotificationService {
     }
 
     public List<Notification> getUserNotifications(UUID userId) {
-        // Updated method call
         return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     public List<Notification> getUnreadNotifications(UUID userId) {
-        // Updated method call
+
         return notificationRepository.findByUserIdAndIsReadFalseOrderByCreatedAtDesc(userId);
     }
 
     public void markAsRead(UUID notificationId) {
         notificationRepository.findById(notificationId).ifPresent(notification -> {
-            notification.setRead(true); // Updated setter
+            notification.setRead(true);
             notificationRepository.save(notification);
         });
     }

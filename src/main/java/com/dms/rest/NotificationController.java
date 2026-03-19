@@ -18,7 +18,7 @@ public class NotificationController {
         this.notificationService = notificationService;
     }
 
-    // Get all notifications for a user (Pass the user ID as a query param for now)
+    // Get all notifications for a user
     @GetMapping
     public ResponseEntity<List<Notification>> getUserNotifications(@RequestParam UUID userId) {
         List<Notification> notifications = notificationService.getUserNotifications(userId);

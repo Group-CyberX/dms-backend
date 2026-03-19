@@ -10,8 +10,8 @@ public class Notification {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "notification_id") // Maps to DB
-    private UUID notificationId;      // Java variable
+    @Column(name = "notification_id")
+    private UUID notificationId;
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -40,7 +40,6 @@ public class Notification {
         this.isRead = false;
     }
 
-    // --- Updated Getters and Setters ---
     public UUID getNotificationId() { return notificationId; }
     public void setNotificationId(UUID notificationId) { this.notificationId = notificationId; }
 

@@ -11,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 import jakarta.servlet.http.HttpServletRequest;
 import com.dms.service.AuditLogService;
 import com.dms.models.AuditLog;
+import com.dms.service.NotificationService;
 
 import java.io.IOException;
 import java.net.URI;
@@ -26,11 +27,13 @@ public class DocumentController {
     private final DocumentRepository documentRepository;
     private final DocumentUploadService documentUploadService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
-    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, AuditLogService auditLogService) {
+    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, AuditLogService auditLogService,NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
     }
 
     @GetMapping
@@ -79,8 +82,7 @@ public class DocumentController {
             UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq);
 
-            // --- THE NEW CHECK ---
-            // We check if the service ACTUALLY succeeded before celebrating
+            // check if the service ACTUALLY succeeded before celebrating
             if (!response.isSuccess()) {
                 // It failed a validation rule (like invalid filename or tags)
                 createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
@@ -88,9 +90,13 @@ public class DocumentController {
                 return ResponseEntity.badRequest().body(response);
             }
 
-            // --- IF WE REACH HERE, IT WAS A TRUE SUCCESS ---
             UUID newDocumentId = response.getDocumentId();
             createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
+
+            // Send the notification
+            UUID testUserId = UUID.fromString("a1b2c3d4-e5f6-7890-abcd-1234567890ab");
+            String notificationMessage = "Your document '" + title + "' was successfully uploaded.";
+            notificationService.sendNotification(testUserId, notificationMessage);
 
             return ResponseEntity.ok(response);
 
