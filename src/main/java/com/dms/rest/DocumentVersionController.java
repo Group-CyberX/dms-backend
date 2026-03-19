@@ -5,6 +5,9 @@ import com.dms.service.DocumentVersionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.dms.models.AuditLog;
+import com.dms.service.AuditLogService;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
 import java.util.List;
@@ -16,9 +19,11 @@ import java.util.UUID;
 public class DocumentVersionController {
 
     private final DocumentVersionService documentVersionService;
+    private final AuditLogService auditLogService;
 
-    public DocumentVersionController(DocumentVersionService documentVersionService) {
+    public DocumentVersionController(DocumentVersionService documentVersionService,AuditLogService auditLogService) {
         this.documentVersionService = documentVersionService;
+        this.auditLogService = auditLogService;
     }
 
     // 1️⃣ Upload new document version
@@ -76,5 +81,14 @@ public class DocumentVersionController {
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Delete failed: " + e.getMessage());
         }
+    }
+    // helper method
+    private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
+        AuditLog log = new AuditLog();
+        log.setAction(action);
+        log.setEntity_id(entityId);
+        log.setIp(request.getRemoteAddr());
+        log.setStatus(status);
+        auditLogService.saveLog(log);
     }
 }

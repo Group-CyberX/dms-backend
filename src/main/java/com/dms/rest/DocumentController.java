@@ -8,6 +8,9 @@ import com.dms.service.DocumentUploadService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.http.HttpServletRequest;
+import com.dms.service.AuditLogService;
+import com.dms.models.AuditLog;
 
 import java.io.IOException;
 import java.net.URI;
@@ -22,10 +25,12 @@ public class DocumentController {
 
     private final DocumentRepository documentRepository;
     private final DocumentUploadService documentUploadService;
+    private final AuditLogService auditLogService;
 
-    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService) {
+    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, AuditLogService auditLogService) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
+        this.auditLogService = auditLogService;
     }
 
     @GetMapping
@@ -33,15 +38,22 @@ public class DocumentController {
         return documentRepository.findAll();
     }
 
+    // audit document viewd
     @GetMapping("/{id}")
-    public ResponseEntity<Documents> getById(@PathVariable("id") UUID id) {
-        return documentRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<Documents> getById(@PathVariable("id") UUID id, HttpServletRequest request) {
+        Optional<Documents> doc = documentRepository.findById(id);
+        if (doc.isPresent()) {
+            createAuditLog("DOCUMENT_VIEWED", id, request, "SUCCESS");
+            return ResponseEntity.ok(doc.get());
+        } else {
+            createAuditLog("DOCUMENT_VIEWED", id, request, "FAILED");
+            return ResponseEntity.notFound().build();
+        }
     }
 
+    // audit document created
     @PostMapping
-    public ResponseEntity<Documents> create(@RequestBody Documents doc) {
+    public ResponseEntity<Documents> create(@RequestBody Documents doc, HttpServletRequest request) {
         if (doc.getDocument_id() == null) {
             doc.setDocument_id(UUID.randomUUID());
         }
@@ -49,9 +61,11 @@ public class DocumentController {
             doc.setCreated_at(LocalDateTime.now());
         }
         Documents saved = documentRepository.save(doc);
+        createAuditLog("DOCUMENT_CREATED", saved.getDocument_id(), request, "SUCCESS");
         return ResponseEntity.created(URI.create("/api/documents/" + saved.getDocument_id())).body(saved);
     }
 
+    // audit document upload
     @PostMapping("/upload")
     public ResponseEntity<DocumentUploadResponse> uploadDocument(
             @RequestParam("file") MultipartFile file,
@@ -59,12 +73,23 @@ public class DocumentController {
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "tags", required = false) String tags,
-            @RequestParam(value = "description", required = false) String description) {
+            @RequestParam(value = "description", required = false) String description,
+            HttpServletRequest request) {
         try {
-            UploadDocumentRequest request = new UploadDocumentRequest(title, folderId, category, tags, description);
-            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request);
+            UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
+            DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq);
+
+            //  extract the newly created document's ID directly from DTO
+            UUID newDocumentId = response.getDocumentId();
+
+            //  pass it into the audit log
+            createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
+
             return ResponseEntity.ok(response);
+
         } catch (IOException e) {
+            // If it fails, no document was created, so passing null for the ID is correct
+            createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
                     null, null, null, "Upload failed: " + e.getMessage(), false
             );
@@ -72,14 +97,15 @@ public class DocumentController {
         }
     }
 
+    // audit document update
     @PutMapping("/{id}")
-    public ResponseEntity<Documents> update(@PathVariable("id") UUID id, @RequestBody Documents update) {
+    public ResponseEntity<Documents> update(@PathVariable("id") UUID id, @RequestBody Documents update, HttpServletRequest request) {
         Optional<Documents> existingOpt = documentRepository.findById(id);
         if (existingOpt.isEmpty()) {
+            createAuditLog("DOCUMENT_EDITED", id, request, "FAILED");
             return ResponseEntity.notFound().build();
         }
         Documents existing = existingOpt.get();
-        // Update mutable fields
         existing.setTitle(update.getTitle());
         existing.setOwner_id(update.getOwner_id());
         existing.setFolder_id(update.getFolder_id());
@@ -90,15 +116,29 @@ public class DocumentController {
             existing.setCreated_at(update.getCreated_at());
         }
         Documents saved = documentRepository.save(existing);
+        createAuditLog("DOCUMENT_EDITED", saved.getDocument_id(), request, "SUCCESS");
         return ResponseEntity.ok(saved);
     }
 
+    // audit document delete
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, HttpServletRequest request) {
         if (!documentRepository.existsById(id)) {
+            createAuditLog("DOCUMENT_DELETED", id, request, "FAILED");
             return ResponseEntity.notFound().build();
         }
         documentRepository.deleteById(id);
+        createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
         return ResponseEntity.noContent().build();
+    }
+
+    // helper method
+    private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
+        AuditLog log = new AuditLog();
+        log.setAction(action);
+        log.setEntity_id(entityId);
+        log.setIp(request.getRemoteAddr());
+        log.setStatus(status);
+        auditLogService.saveLog(log);
     }
 }
