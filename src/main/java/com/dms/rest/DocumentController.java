@@ -79,16 +79,22 @@ public class DocumentController {
             UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq);
 
-            //  extract the newly created document's ID directly from DTO
-            UUID newDocumentId = response.getDocumentId();
+            // --- THE NEW CHECK ---
+            // We check if the service ACTUALLY succeeded before celebrating
+            if (!response.isSuccess()) {
+                // It failed a validation rule (like invalid filename or tags)
+                createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
+                // Return a 400 Bad Request so the React frontend knows it failed
+                return ResponseEntity.badRequest().body(response);
+            }
 
-            //  pass it into the audit log
+            // --- IF WE REACH HERE, IT WAS A TRUE SUCCESS ---
+            UUID newDocumentId = response.getDocumentId();
             createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
 
             return ResponseEntity.ok(response);
 
         } catch (IOException e) {
-            // If it fails, no document was created, so passing null for the ID is correct
             createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
                     null, null, null, "Upload failed: " + e.getMessage(), false
