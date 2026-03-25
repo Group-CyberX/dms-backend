@@ -11,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile;
 import jakarta.servlet.http.HttpServletRequest;
 import com.dms.service.AuditLogService;
 import com.dms.models.AuditLog;
+import com.dms.service.NotificationService;
 
 import java.io.IOException;
 import java.net.URI;
@@ -26,11 +27,13 @@ public class DocumentController {
     private final DocumentRepository documentRepository;
     private final DocumentUploadService documentUploadService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
-    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, AuditLogService auditLogService) {
+    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, AuditLogService auditLogService, NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
     }
 
     @GetMapping
@@ -92,6 +95,12 @@ public class DocumentController {
             UUID newDocumentId = response.getDocumentId();
             createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
 
+
+            // Send the notification
+            UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+            String notificationMessage = "Your document '" + title + "' was successfully uploaded.";
+            notificationService.sendNotification(testUserId, notificationMessage);
+
             return ResponseEntity.ok(response);
 
         } catch (IOException e) {
@@ -145,6 +154,8 @@ public class DocumentController {
         log.setEntity_id(entityId);
         log.setIp(request.getRemoteAddr());
         log.setStatus(status);
+        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+        log.setUser_id(testUserId);
         auditLogService.saveLog(log);
     }
 }
