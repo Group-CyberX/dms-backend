@@ -14,10 +14,10 @@ public class DocumentMetadata {
     @Column(name = "metadata_id")
     private UUID metadataId;
 
-    @Column(name = "key")
+    @Column(name = "key", nullable = false)
     private String key;
 
-    @Column(name = "value")
+    @Column(name = "value", nullable = false)
     private String value;
 
     @JsonBackReference

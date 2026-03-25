@@ -1,6 +1,6 @@
 package com.dms.rest;
 
-import com.dms.dto.DocumentTitleDTO;
+import com.dms.dto.SearchResultDTO;
 import com.dms.service.SearchService;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,9 +18,15 @@ public class SearchController {
     }
 
     @GetMapping
-    public List<DocumentTitleDTO> searchDocuments(
-            @RequestParam(required = false) String query
+    public List<SearchResultDTO> searchDocuments(
+            @RequestParam(required = false) String query,
+            @RequestParam(required = false) String documentType,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String owner,
+            @RequestParam(required = false) String tags,
+            @RequestParam(required = false) String signatureStatus,
+            @RequestParam(required = false) String dateRange
     ) {
-        return searchService.search(query);
+        return searchService.search(query, documentType, status, owner, tags, signatureStatus, dateRange);
     }
 }
