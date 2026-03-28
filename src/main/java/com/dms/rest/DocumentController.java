@@ -30,14 +30,19 @@ public class DocumentController {
 
     @GetMapping
     public List<Documents> getAll() {
-        return documentRepository.findAll();
+        return documentRepository.findAllActive();
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Documents> getById(@PathVariable("id") UUID id) {
-        return documentRepository.findById(id)
+        return documentRepository.findActiveById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/trash")
+    public List<Documents> getDeleted() {
+        return documentRepository.findAllDeleted();
     }
 
     @PostMapping
@@ -48,6 +53,8 @@ public class DocumentController {
         if (doc.getCreated_at() == null) {
             doc.setCreated_at(LocalDateTime.now());
         }
+        // Ensure new documents are not created as deleted inadvertently
+        doc.setIs_deleted(false);
         Documents saved = documentRepository.save(doc);
         return ResponseEntity.created(URI.create("/api/documents/" + saved.getDocument_id())).body(saved);
     }
@@ -79,13 +86,12 @@ public class DocumentController {
             return ResponseEntity.notFound().build();
         }
         Documents existing = existingOpt.get();
-        // Update mutable fields
+        // Update mutable fields (do not allow toggling is_deleted here)
         existing.setTitle(update.getTitle());
         existing.setOwner_id(update.getOwner_id());
         existing.setFolder_id(update.getFolder_id());
         existing.setCurrent_version_id(update.getCurrent_version_id());
         existing.setIs_locked(update.isIs_locked());
-        existing.setIs_deleted(update.isIs_deleted());
         if (update.getCreated_at() != null) {
             existing.setCreated_at(update.getCreated_at());
         }
@@ -95,10 +101,20 @@ public class DocumentController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
-        if (!documentRepository.existsById(id)) {
+        // Soft delete: mark as deleted without removing S3 files
+        int updated = documentRepository.softDeleteById(id);
+        if (updated == 0) {
             return ResponseEntity.notFound().build();
         }
-        documentRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<Void> restore(@PathVariable("id") UUID id) {
+        int updated = documentRepository.restoreById(id);
+        if (updated == 0) {
+            return ResponseEntity.notFound().build();
+        }
         return ResponseEntity.noContent().build();
     }
 }
