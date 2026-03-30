@@ -73,7 +73,7 @@ public class DocumentController {
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
-                    null, null, null, "Upload failed: " + e.getMessage(), false
+                    null, null, null, file.getOriginalFilename(), "Upload failed: " + e.getMessage(), false
             );
             return ResponseEntity.badRequest().body(errorResponse);
         }

@@ -30,6 +30,7 @@ public class DocumentUploadService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final FolderRepository folderRepository;
+    private final TagService tagService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -66,60 +67,63 @@ public class DocumentUploadService {
             "invoice", "contract", "report", "proposal", "other"
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client) {
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.folderRepository = folderRepository;
         this.s3Client = s3Client;
+        this.tagService = tagService;
     }
 
     @Transactional
     public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request) throws IOException {
+        String fileName = file != null ? file.getOriginalFilename() : "unknown";
+        
         if (file == null || file.isEmpty()) {
-            return new DocumentUploadResponse(null, null, null, "File is empty", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "File is empty", false);
         }
 
         // Basic metadata validations
         String title = request.getTitle() == null ? null : request.getTitle().trim();
         if (title == null || title.isEmpty()) {
-            return new DocumentUploadResponse(null, null, null, "Title is required", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Title is required", false);
         }
         if (title.length() > 200) {
-            return new DocumentUploadResponse(null, null, null, "Title must be at most 200 characters", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Title must be at most 200 characters", false);
         }
         if (request.getDescription() != null && request.getDescription().length() > 1000) {
-            return new DocumentUploadResponse(null, null, null, "Description must be at most 1000 characters", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Description must be at most 1000 characters", false);
         }
         if (request.getTags() != null) {
             String tags = request.getTags();
             if (tags.length() > 200) {
-                return new DocumentUploadResponse(null, null, null, "Tags must be at most 200 characters", false);
+                return new DocumentUploadResponse(null, null, null, fileName, "Tags must be at most 200 characters", false);
             }
             if (!isValidTags(tags)) {
-                return new DocumentUploadResponse(null, null, null, "Tags must be comma-separated values using only letters, numbers, dash or underscore", false);
+                return new DocumentUploadResponse(null, null, null, fileName, "Tags must be comma-separated values using only letters, numbers, dash or underscore", false);
             }
         }
 
         // File validations
         if (file.getSize() > maxUploadBytes) {
-            return new DocumentUploadResponse(null, null, null, "File exceeds maximum allowed size", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "File exceeds maximum allowed size", false);
         }
 
         // Validate original filename and extension
         String original = sanitizeOriginalFilename(file.getOriginalFilename());
         if (original == null || !SAFE_FILENAME.matcher(original).matches()) {
-            return new DocumentUploadResponse(null, null, null, "Invalid file name. Use only letters, numbers, dash, underscore and a supported extension (pdf, docx, xlsx, png, jpg, jpeg)", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Invalid file name. Use only letters, numbers, dash, underscore and a supported extension (pdf, docx, xlsx, png, jpg, jpeg)", false);
         }
         String ext = getFileExtension(original);
         if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-            return new DocumentUploadResponse(null, null, null, "Unsupported file extension: ." + ext, false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Unsupported file extension: ." + ext, false);
         }
 
         String contentType = file.getContentType();
         if (contentType != null && !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             // If reported content type is not in allowlist, still allow if extension is allowed and content type is generic
             if (!ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-                return new DocumentUploadResponse(null, null, null, "Unsupported file type: " + contentType, false);
+                return new DocumentUploadResponse(null, null, null, fileName, "Unsupported file type: " + contentType, false);
             }
         }
 
@@ -134,7 +138,7 @@ public class DocumentUploadService {
                 categoryNormalized = category.trim().toLowerCase();
             }
             if (!ALLOWED_CATEGORIES.contains(categoryNormalized)) {
-                return new DocumentUploadResponse(null, null, null, "Invalid category. Allowed: invoice, contract, report, proposal, other", false);
+                return new DocumentUploadResponse(null, null, null, fileName, "Invalid category. Allowed: invoice, contract, report, proposal, other", false);
             }
             // Find or create folder with this category name
             final String folderName = categoryNormalized;
@@ -159,7 +163,7 @@ public class DocumentUploadService {
 
         // Duplicate check by title in the resolved folder
         if (documentRepository.existsByTitleInFolder(title, effectiveFolderId)) {
-            return new DocumentUploadResponse(null, null, null, "A document with the same title already exists in this folder", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "A document with the same title already exists in this folder", false);
         }
 
         // Generate IDs
@@ -194,6 +198,9 @@ public class DocumentUploadService {
 
             documentRepository.save(document);
 
+            // Save tags
+            tagService.saveTags(documentId, request.getTags());
+
             // Create DocumentVersion record
             DocumentVersions version = new DocumentVersions();
             version.setVersion_id(versionId);
@@ -210,6 +217,7 @@ public class DocumentUploadService {
                     documentId,
                     versionId,
                     title,
+                    fileName,
                     "Document uploaded successfully",
                     true
             );
@@ -220,7 +228,7 @@ public class DocumentUploadService {
                     if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
                 } catch (IOException ignore) {}
             }
-            return new DocumentUploadResponse(null, null, null, "Error calculating file checksum: " + e.getMessage(), false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Error calculating file checksum: " + e.getMessage(), false);
         } catch (RuntimeException e) {
             // On any unchecked exception, attempt to remove file to keep FS consistent with rolled-back DB
             if (savedFileName != null) {
@@ -228,7 +236,8 @@ public class DocumentUploadService {
                     if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
                 } catch (IOException ignore) {}
             }
-            throw e;
+            String errorMsg = "Upload failed: " + (e.getMessage() != null ? e.getMessage() : "Unknown error");
+            return new DocumentUploadResponse(null, null, null, fileName, errorMsg, false);
         }
     }
 
