@@ -10,8 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.List;
-
+ 
 public interface DocumentRepository extends JpaRepository<Documents, UUID> {
 
     @Query("select (count(d) > 0) from Documents d where d.is_deleted = false and d.title = :title and ((:folderId is null and d.folder_id is null) or d.folder_id = :folderId)")
@@ -47,5 +46,30 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
 
     @Query(value = "SELECT * FROM \"Document\" WHERE is_deleted = true", nativeQuery = true)
     List<Documents> findAllDeleted();
+
+    // Search by tags - using native SQL
+    @Query(value = """
+        SELECT DISTINCT d.* FROM "Document" d
+        INNER JOIN "DocumentTag" dt ON d.document_id = dt.document_id
+        INNER JOIN "Tag" t ON dt.tag_id = t.tag_id
+        WHERE LOWER(t.tag_name) LIKE LOWER(CONCAT('%', ?1, '%'))
+              AND d.is_deleted = false
+    """, nativeQuery = true)
+    List<Documents> searchByTag(String tagName);
+
+    // Combined search - search title, metadata, AND tags
+    @Query(value = """
+        SELECT DISTINCT d.* FROM "Document" d
+        LEFT JOIN document_metadata m ON d.document_id = m.document_id
+        LEFT JOIN "DocumentTag" dt ON d.document_id = dt.document_id
+        LEFT JOIN "Tag" t ON dt.tag_id = t.tag_id
+        WHERE d.is_deleted = false
+              AND (?1 IS NULL 
+                   OR LOWER(d.title) LIKE LOWER(CONCAT('%', ?1, '%'))
+                   OR LOWER(m.meta_key) LIKE LOWER(CONCAT('%', ?1, '%'))
+                   OR LOWER(m.meta_value) LIKE LOWER(CONCAT('%', ?1, '%'))
+                   OR LOWER(t.tag_name) LIKE LOWER(CONCAT('%', ?1, '%')))
+    """, nativeQuery = true)
+    List<Documents> universalSearchIncludingTags(String searchTerm);
 }
 
