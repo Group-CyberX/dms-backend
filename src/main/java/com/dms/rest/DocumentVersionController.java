@@ -2,6 +2,8 @@ package com.dms.rest;
 
 import com.dms.models.DocumentVersions;
 import com.dms.service.DocumentVersionService;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -75,6 +77,34 @@ public class DocumentVersionController {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Delete failed: " + e.getMessage());
+        }
+    }
+
+    // 4️⃣ Download specific version
+    @GetMapping("/{versionId}/download")
+    public ResponseEntity<?> downloadVersion(@PathVariable("documentId") UUID documentId,
+                                             @PathVariable("versionId") UUID versionId) {
+        try {
+            byte[] fileBytes = documentVersionService.getVersionFileBytes(documentId, versionId);
+            Optional<DocumentVersions> version = documentVersionService.getVersion(documentId, versionId);
+            
+            if (version.isEmpty()) {
+                return ResponseEntity.notFound().build();
+            }
+            
+            String fileName = version.get().getS3_bucket_key();
+            if (fileName != null && fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .header(HttpHeaders.CONTENT_TYPE, "application/octet-stream")
+                    .body(fileBytes);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body("Download failed: " + e.getMessage());
         }
     }
 }
