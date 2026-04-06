@@ -78,11 +78,6 @@
             <version>0.11.5</version>
             <scope>runtime</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-mail</artifactId>
-        
         <!-- AWS SDK v2 for S3 -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
