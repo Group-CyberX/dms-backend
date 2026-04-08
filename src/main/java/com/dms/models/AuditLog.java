@@ -4,19 +4,33 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 
 @Entity
 @Table(name = "audit_logs")
 public class AuditLog {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @JsonProperty("log_id")
     private UUID log_id;
+
+    @JsonProperty("user_id")
     private UUID user_id;
+
+    @JsonProperty("action")
     private String action;
+
+    @JsonProperty("entity_id")
     private UUID entity_id;
+
+    @JsonProperty("timestamp")
     private LocalDateTime timestamp;
+
+    @JsonProperty("ip")
     private String ip;
+
+    @JsonProperty("status")
     private String status;
 
     public AuditLog() {}

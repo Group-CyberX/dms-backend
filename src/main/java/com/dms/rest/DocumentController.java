@@ -82,7 +82,6 @@ public class DocumentController {
             UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq);
 
-            // --- THE NEW CHECK ---
             // We check if the service ACTUALLY succeeded before celebrating
             if (!response.isSuccess()) {
                 // It failed a validation rule (like invalid filename or tags)
@@ -91,7 +90,6 @@ public class DocumentController {
                 return ResponseEntity.badRequest().body(response);
             }
 
-            // --- IF WE REACH HERE, IT WAS A TRUE SUCCESS ---
             UUID newDocumentId = response.getDocumentId();
             createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
 
@@ -132,24 +130,80 @@ public class DocumentController {
         }
         Documents saved = documentRepository.save(existing);
         createAuditLog("DOCUMENT_EDITED", saved.getDocument_id(), request, "SUCCESS");
+        sendInternalNotification("Document "+saved.getTitle()+" was modified.");
         return ResponseEntity.ok(saved);
     }
 
     // audit document delete
+//    @DeleteMapping("/{id}")
+//    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, HttpServletRequest request) {
+//        Optional<Documents> doc=documentRepository.findById(id);
+//        if (!documentRepository.existsById(id)) {
+//            createAuditLog("DOCUMENT_DELETED", id, request, "FAILED");
+//            return ResponseEntity.notFound().build();
+//        }
+//
+//        String title = doc.get().getTitle();
+//        documentRepository.deleteById(id);
+//        createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
+//        //sends the notification
+//        sendInternalNotification("Document "+title+" has been deleted.");
+//        return ResponseEntity.noContent().build();
+//    }
+
+    //for the testing purposes of audit and notifications
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id, HttpServletRequest request) {
-        if (!documentRepository.existsById(id)) {
+        Optional<Documents> docOpt = documentRepository.findById(id);
+
+        if (docOpt.isPresent()) {
+            Documents doc = docOpt.get();
+
+            doc.setIs_deleted(true);
+            documentRepository.save(doc);
+
+            createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
+
+            sendInternalNotification("Document '" + doc.getTitle() + "' has been deleted.");
+
+            return ResponseEntity.noContent().build();
+        } else {
             createAuditLog("DOCUMENT_DELETED", id, request, "FAILED");
             return ResponseEntity.notFound().build();
         }
-        documentRepository.deleteById(id);
-        createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
-        return ResponseEntity.noContent().build();
+    }
+
+    //audit document approve
+    @PutMapping("/{id}/approve")
+    public ResponseEntity<Documents> approveDocument(@PathVariable("id") UUID id, HttpServletRequest request) {
+        Optional<Documents> docOpt = documentRepository.findById(id);
+        if (docOpt.isEmpty()) {
+            createAuditLog("DOCUMENT_APPROVED", id, request, "FAILED");
+            return ResponseEntity.notFound().build();
+        }
+
+        Documents doc = docOpt.get();
+
+        documentRepository.save(doc);
+        createAuditLog("DOCUMENT_APPROVED", id, request, "SUCCESS");
+
+        // send Notification
+        sendInternalNotification("Document " + doc.getTitle() + " has been approved!");
+
+        return ResponseEntity.ok(doc);
     }
 
     // helper method
     private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
         AuditLog log = new AuditLog();
+        //to get the real IP address
+        String remoteAddr = request.getHeader("X-Forwarded-For");
+        if (remoteAddr == null || remoteAddr.isEmpty()) {
+            remoteAddr = request.getRemoteAddr();
+        }
+        if (remoteAddr.equals("0:0:0:0:0:0:0:1")) {
+            remoteAddr = "127.0.0.1 (Local)";
+        }
         log.setAction(action);
         log.setEntity_id(entityId);
         log.setIp(request.getRemoteAddr());
@@ -157,5 +211,9 @@ public class DocumentController {
         UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
         log.setUser_id(testUserId);
         auditLogService.saveLog(log);
+    }
+    private void sendInternalNotification(String message) {
+        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+        notificationService.sendNotification(testUserId, message);
     }
 }

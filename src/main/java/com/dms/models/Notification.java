@@ -3,6 +3,7 @@ package com.dms.models;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "notifications")
@@ -20,6 +21,7 @@ public class Notification {
     private String message;
 
     @Column(name = "is_read", nullable = false)
+    @JsonProperty("isRead")
     private boolean isRead = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -50,8 +52,13 @@ public class Notification {
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
 
-    public boolean isRead() { return isRead; }
-    public void setRead(boolean read) { isRead = read; }
+    public boolean isIsRead() {
+        return isRead;
+    }
+
+    public void setIsRead(boolean isRead) {
+        this.isRead = isRead;
+    }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

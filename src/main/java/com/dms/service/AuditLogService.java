@@ -34,4 +34,7 @@ public class AuditLogService {
         }
         return auditLogRepository.save(auditLog);
     }
+    public List<AuditLog> getFilteredLogs(UUID userId, String action, LocalDateTime fromDate, LocalDateTime toDate) {
+        return auditLogRepository.findByFilters(userId, action, fromDate, toDate);
+    }
 }
