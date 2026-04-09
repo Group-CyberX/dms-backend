@@ -26,19 +26,25 @@ public class AdminAuditController {
     // NEW: The Filter Endpoint
     @GetMapping("/logs/filter")
     public List<AuditLog> getFilteredLogs(
-            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) String userId,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String fromDate,
             @RequestParam(required = false) String toDate) {
 
-        // Logic to convert the Strings from frontend into LocalDateTime objects
+        // Convert strings to proper types or null
+        UUID userUuid = (userId != null && !userId.isEmpty() && !userId.equals("all"))
+                ? UUID.fromString(userId) : null;
+
+        String actionParam = (action != null && !action.isEmpty() && !action.equals("all"))
+                ? action : null;
+
         LocalDateTime start = (fromDate != null && !fromDate.isEmpty())
                 ? LocalDateTime.parse(fromDate + "T00:00:00") : null;
 
         LocalDateTime end = (toDate != null && !toDate.isEmpty())
                 ? LocalDateTime.parse(toDate + "T23:59:59") : null;
 
-        return auditLogService.getFilteredLogs(userId, action, start, end);
+        return auditLogService.getFilteredLogs(userUuid, actionParam, start, end);
     }
 
     @PostMapping("/logs")

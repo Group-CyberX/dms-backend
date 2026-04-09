@@ -27,7 +27,7 @@ public class DocumentUploadService {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
-
+    private final NotificationService notificationService;
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
@@ -51,9 +51,10 @@ public class DocumentUploadService {
             Pattern.CASE_INSENSITIVE
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository) {
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -163,6 +164,11 @@ public class DocumentUploadService {
             return new DocumentUploadResponse(null, null, null, "Error calculating file checksum: " + e.getMessage(), false);
         } catch (RuntimeException e) {
             // On any unchecked exception, attempt to remove file to keep FS consistent with rolled-back DB
+            if (savedFileName != null) {
+                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
+            }
+            throw e;
+        } catch (Exception e) {
             if (savedFileName != null) {
                 try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
             }

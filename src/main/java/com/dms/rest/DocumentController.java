@@ -78,6 +78,8 @@ public class DocumentController {
             @RequestParam(value = "tags", required = false) String tags,
             @RequestParam(value = "description", required = false) String description,
             HttpServletRequest request) {
+        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+
         try {
             UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq);
@@ -86,6 +88,8 @@ public class DocumentController {
             if (!response.isSuccess()) {
                 // It failed a validation rule (like invalid filename or tags)
                 createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
+                //Send the failed notification
+                notificationService.sendNotification(testUserId, "Failed: " + response.getMessage());
                 // Return a 400 Bad Request so the React frontend knows it failed
                 return ResponseEntity.badRequest().body(response);
             }
@@ -95,7 +99,6 @@ public class DocumentController {
 
 
             // Send the notification
-            UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
             String notificationMessage = "Your document '" + title + "' was successfully uploaded.";
             notificationService.sendNotification(testUserId, notificationMessage);
 
@@ -103,6 +106,7 @@ public class DocumentController {
 
         } catch (IOException e) {
             createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
+            notificationService.sendNotification(testUserId, "Error: Upload failed due to system error.");
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
                     null, null, null, "Upload failed: " + e.getMessage(), false
             );

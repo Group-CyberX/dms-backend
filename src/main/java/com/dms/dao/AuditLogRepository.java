@@ -8,13 +8,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
+public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
 
     @Query("SELECT a FROM AuditLog a WHERE " +
-            "(:userId IS NULL OR a.user_id = :userId) AND " +
+            "(CAST(:userId AS uuid) IS NULL OR a.user_id = :userId) AND " +
             "(:action IS NULL OR a.action = :action) AND " +
-            "(:fromDate IS NULL OR a.timestamp >= :fromDate) AND " +
-            "(:toDate IS NULL OR a.timestamp <= :toDate) " +
+            "(CAST(:fromDate AS localdatetime) IS NULL OR a.timestamp >= :fromDate) AND " +
+            "(CAST(:toDate AS localdatetime) IS NULL OR a.timestamp <= :toDate) " +
             "ORDER BY a.timestamp DESC")
     List<AuditLog> findByFilters(
             @Param("userId") UUID userId,
