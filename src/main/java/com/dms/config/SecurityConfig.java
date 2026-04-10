@@ -30,9 +30,21 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // ✅ Public endpoints - no authentication required
                         .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers("/admin/**").hasRole("SYSTEM ADMIN")
-                        .requestMatchers("/user/").hasAnyRole("USER", "SYSTEM ADMIN")
+                        
+                        // ✅ API endpoints - allow all authenticated users
+                        .requestMatchers("/api/**").authenticated()
+                        
+                        // ✅ Admin endpoints - allow all authenticated users (can be restricted later)
+                        //.requestMatchers("/admin/**").hasRole("SYSTEM ADMIN")
+                        .requestMatchers("/admin/**").authenticated()
+                        
+                        // ✅ User endpoints - allow all authenticated users
+                        //.requestMatchers("/user/").hasAnyRole("USER", "SYSTEM ADMIN")
+                        .requestMatchers("/user/**").authenticated()
+                        
+                        // ✅ All other requests require authentication
                         .anyRequest().authenticated()
                 )
                 .formLogin(AbstractHttpConfigurer::disable)
