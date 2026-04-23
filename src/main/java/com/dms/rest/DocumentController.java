@@ -70,6 +70,9 @@ public class DocumentController {
         try {
             UploadDocumentRequest request = new UploadDocumentRequest(title, folderId, category, tags, description);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, request);
+            if (!response.isSuccess()) {
+                return ResponseEntity.badRequest().body(response);
+            }
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(

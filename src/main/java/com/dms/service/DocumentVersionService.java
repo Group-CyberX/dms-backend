@@ -2,7 +2,9 @@ package com.dms.service;
 
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.DocumentVersionRepository;
+import com.dms.dao.DocumentMetadataRepository;
 import com.dms.models.Documents;
+import com.dms.models.DocumentMetadata;
 import com.dms.models.DocumentVersions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,8 @@ public class DocumentVersionService {
 
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentRepository documentRepository;
+    private final MetadataExtractorService metadataExtractorService;
+    private final DocumentMetadataRepository documentMetadataRepository;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -58,10 +62,14 @@ public class DocumentVersionService {
 
     public DocumentVersionService(DocumentVersionRepository documentVersionRepository,
                                   DocumentRepository documentRepository,
-                                  software.amazon.awssdk.services.s3.S3Client s3Client) {
+                                  software.amazon.awssdk.services.s3.S3Client s3Client,
+                                  MetadataExtractorService metadataExtractorService,
+                                  DocumentMetadataRepository documentMetadataRepository) {
         this.documentVersionRepository = documentVersionRepository;
         this.documentRepository = documentRepository;
         this.s3Client = s3Client;
+        this.metadataExtractorService = metadataExtractorService;
+        this.documentMetadataRepository = documentMetadataRepository;
     }
 
     public List<DocumentVersions> listVersions(UUID documentId) {
@@ -117,6 +125,8 @@ public class DocumentVersionService {
         try {
             String checksum = calculateChecksum(file.getBytes());
 
+            String extractedText = metadataExtractorService.extractText(file);
+
             UUID versionId = UUID.randomUUID();
             if ("s3".equalsIgnoreCase(storageType)) {
                 savedFileName = buildStorageKey(documentId, versionId, original);
@@ -134,10 +144,20 @@ public class DocumentVersionService {
             version.setVersion_number(newVersionNumber);
             version.setS3_bucket_key(savedFileName);
             version.setChecksum(checksum);
-            version.setOcr_content("");
+            version.setOcr_content(extractedText);
             version.setCreated_at(LocalDateTime.now());
 
             documentVersionRepository.save(version);
+            
+            // Save Automatic Metadata (Content-Type and File Size)
+            if (file.getContentType() != null) {
+                documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
+            }
+            documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", String.valueOf(file.getSize()) + " bytes"));
+            if (extractedText != null && !extractedText.isEmpty()) {
+                int wordCount = extractedText.split("\\s+").length;
+                documentMetadataRepository.save(new DocumentMetadata(document, "Word-Count", String.valueOf(wordCount)));
+            }
 
             // update current version pointer
             document.setCurrent_version_id(versionId);

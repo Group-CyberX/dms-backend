@@ -22,7 +22,7 @@ public class DocumentMetadata {
     @Column(name = "meta_key", nullable = false)
     private String key;
 
-    @Column(name = "meta_value", nullable = false)
+    @Column(name = "meta_value", nullable = false, columnDefinition = "TEXT")
     private String value;
 
     public DocumentMetadata() {}
