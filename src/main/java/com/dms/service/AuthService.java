@@ -10,26 +10,30 @@ import com.dms.models.User;
 import com.dms.security.JwtUtil;
 import com.dms.dto.LoginResponse;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.dms.util.PermissionUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
 public class AuthService {
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
-    @Autowired
-    private RoleRepository roleRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private JwtUtil jwtUtil;
+    public AuthService(UserRepository userRepository,
+                       RoleRepository roleRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtUtil jwtUtil) {
+        this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
+    }
 
     public RegisterResponse register(RegisterRequest request) {
         User user = new User();
@@ -52,6 +56,7 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
+
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -61,8 +66,30 @@ public class AuthService {
             throw new RuntimeException("Invalid email or password");
         }
 
-        String token = jwtUtil.generateToken(user.getEmail());
-        return new LoginResponse(user.getEmail(), token);
+        //Generate JWT
+        String token = jwtUtil.generateToken(
+                user.getEmail(),
+                user.getRole().getName()
+        );
+
+        // Role
+        String roleName = user.getRole().getName();
+
+        // Permissions (JSON → Map)
+        Map<String, Boolean> permissions =
+                PermissionUtil.parsePermissions(
+                        user.getRole().getPermissions() != null
+                                ? user.getRole().getPermissions()
+                                : "{}"
+                );
+
+        //Return full response
+        return new LoginResponse(
+                user.getEmail(),
+                token,
+                roleName,
+                permissions
+        );
     }
 
     public void forgotPassword(String email) {
@@ -103,6 +130,19 @@ public class AuthService {
         user.setResetTokenExpiry(null);
 
         userRepository.save(user);
+    }
+    private String createRefreshToken(User user) {
+
+        String token = UUID.randomUUID().toString();
+
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.setToken(token);
+        refreshToken.setUser(user);
+        refreshToken.setExpiryDate(LocalDateTime.now().plusDays(7));
+
+        refreshTokenRepository.save(refreshToken);
+
+        return token;
     }
 
 }
