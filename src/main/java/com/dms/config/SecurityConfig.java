@@ -4,11 +4,22 @@ import com.dms.security.JwtFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+<<<<<<< HEAD
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+=======
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.config.Customizer;
+>>>>>>> origin/dev
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -44,6 +55,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // ✅ PUBLIC APIs (VERY IMPORTANT for your frontend)
                         .requestMatchers("/auth/**").permitAll()
+<<<<<<< HEAD
                         .requestMatchers("/api/search/**").permitAll()
                         .requestMatchers("/api/documents/**").permitAll()
                         .requestMatchers("/api/folders/**").permitAll()
@@ -63,9 +75,28 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
 
                 // ✅ JWT FILTER
+=======
+
+                        .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated() 
+                        .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll() 
+                        .requestMatchers(HttpMethod.DELETE, "/api/share-links/**").authenticated() 
+                        .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
+
+                        .requestMatchers("/api/comments/**").permitAll()
+
+                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
+                        .requestMatchers("/user/").hasAnyRole("USER", "SYSTEM_ADMIN")
+
+                        .anyRequest().authenticated()
+                )
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
+>>>>>>> origin/dev
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+
     }
 
     // ✅ CORS CONFIG (VERY IMPORTANT FOR FRONTEND)
