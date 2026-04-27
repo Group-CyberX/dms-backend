@@ -8,14 +8,13 @@ import java.util.List;
 public class CreateWorkflowRequest {
 
     private String documentId;
-
+    private String documentType;
     private Long templateId;
-
     private String workflowName;
-
     private String priority;
-
     private LocalDate dueDate;
-
     private List<String> approvers;
+    private String createdByUserId;
+    private boolean saveAsTemplate;
+    private String templateName; 
 }

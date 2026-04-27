@@ -7,5 +7,5 @@ import java.util.List;
 
 public interface WorkflowTemplateStepRepository extends JpaRepository<WorkflowTemplateStep, Long> {
 
-    List<WorkflowTemplateStep> findByTemplateId(Long templateId);
+    List<WorkflowTemplateStep> findByTemplateIdOrderByStepOrderAsc(Long templateId);
 }
