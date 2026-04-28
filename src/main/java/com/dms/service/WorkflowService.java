@@ -112,7 +112,11 @@ public class WorkflowService {
             WorkflowTask task = new WorkflowTask();
             task.setInstanceId(instance.getId());
             task.setStepOrder(step.getStepOrder());
-            task.setUserId(step.getApproverRole());
+            task.setUserId(
+                    step.getApproverUserId() != null && !step.getApproverUserId().isBlank()
+                            ? step.getApproverUserId()
+                            : step.getApproverRole()
+            );
             task.setStatus(WorkflowConstants.TASK_PENDING);
             taskRepo.save(task);
         }

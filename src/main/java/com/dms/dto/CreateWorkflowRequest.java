@@ -11,6 +11,7 @@ public class CreateWorkflowRequest {
     private String documentType;
     private Long templateId;
     private String workflowName;
+    private String description;
     private String priority;
     private LocalDate dueDate;
     private List<String> approvers;
