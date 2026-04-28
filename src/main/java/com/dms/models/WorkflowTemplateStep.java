@@ -19,5 +19,9 @@ public class WorkflowTemplateStep {
 
     private int stepOrder;
 
+    private String approverUserId;
+
+    private String approverName;
+
     private String approverRole;
 }

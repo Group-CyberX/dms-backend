@@ -24,9 +24,33 @@ public class WorkflowTemplateController {
         return templateService.createTemplate(request);
     }
 
+    @PutMapping("/{templateId}")
+    public WorkflowTemplate updateTemplate(
+            @PathVariable Long templateId,
+            @RequestBody CreateWorkflowTemplateRequest request
+    ) {
+        return templateService.updateTemplate(templateId, request);
+    }
+
+    @DeleteMapping("/{templateId}")
+    public void deleteTemplate(@PathVariable Long templateId) {
+        templateService.deleteTemplate(templateId);
+    }
+
     @GetMapping
     public List<WorkflowTemplate> getAllTemplates() {
         return templateService.getAllTemplates();
+    }
+
+    @GetMapping("/{templateId}")
+    public WorkflowTemplate getTemplateById(@PathVariable Long templateId) {
+        return templateService.getAllTemplates().stream()
+                .filter(template -> template.getId().equals(templateId))
+                .findFirst()
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.NOT_FOUND,
+                        "Template not found"
+                ));
     }
 
     @GetMapping("/by-document-type/{documentType}")

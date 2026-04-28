@@ -17,6 +17,8 @@ public class CreateWorkflowTemplateRequest {
     @Data
     public static class StepApprover {
         private int stepOrder;
+        private String approverUserId;
+        private String approverName;
         private String approverRole;
     }
 }
