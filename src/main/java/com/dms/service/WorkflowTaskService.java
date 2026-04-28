@@ -4,6 +4,7 @@ import com.dms.constants.WorkflowConstants;
 import com.dms.dao.WorkflowInstanceRepository;
 import com.dms.dao.WorkflowTaskRepository;
 import com.dms.dao.WorkflowTemplateRepository;
+import com.dms.dto.WorkflowTaskActionRequest;
 import com.dms.models.WorkflowInstance;
 import com.dms.models.WorkflowTask;
 import com.dms.models.WorkflowTemplate;
@@ -35,7 +36,7 @@ public class WorkflowTaskService {
         return taskRepo.findByInstanceIdOrderByStepOrderAsc(instanceId);
     }
 
-    public WorkflowTask approveTask(Long taskId) {
+    public WorkflowTask approveTask(Long taskId, WorkflowTaskActionRequest request) {
         WorkflowTask task = taskRepo.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
@@ -50,22 +51,24 @@ public class WorkflowTaskService {
         WorkflowInstance instance = instanceRepo.findById(task.getInstanceId())
                 .orElseThrow(() -> new RuntimeException("Workflow instance not found"));
 
-        WorkflowTemplate template = templateRepo.findById(instance.getTemplateId())
-                .orElseThrow(() -> new RuntimeException("Workflow template not found"));
+        if (instance.getTemplateId() != null) {
+            WorkflowTemplate template = templateRepo.findById(instance.getTemplateId())
+                    .orElseThrow(() -> new RuntimeException("Workflow template not found"));
 
-        // sequential workflow -> previous steps must already be approved
-        if (WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL.equalsIgnoreCase(template.getWorkflowType())) {
-            List<WorkflowTask> allTasks = taskRepo.findByInstanceIdOrderByStepOrderAsc(instance.getId());
+            if (WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL.equalsIgnoreCase(template.getWorkflowType())) {
+                List<WorkflowTask> allTasks = taskRepo.findByInstanceIdOrderByStepOrderAsc(instance.getId());
 
-            for (WorkflowTask existingTask : allTasks) {
-                if (existingTask.getStepOrder() < task.getStepOrder()
-                        && !WorkflowConstants.TASK_APPROVED.equals(existingTask.getStatus())) {
-                    throw new RuntimeException("Previous step must be approved first");
+                for (WorkflowTask existingTask : allTasks) {
+                    if (existingTask.getStepOrder() < task.getStepOrder()
+                            && !WorkflowConstants.TASK_APPROVED.equals(existingTask.getStatus())) {
+                        throw new RuntimeException("Previous step must be approved first");
+                    }
                 }
             }
         }
 
         task.setStatus(WorkflowConstants.TASK_APPROVED);
+        task.setActionComment(normalizeComment(request));
         task = taskRepo.save(task);
 
         List<WorkflowTask> updatedTasks = taskRepo.findByInstanceIdOrderByStepOrderAsc(instance.getId());
@@ -86,7 +89,11 @@ public class WorkflowTaskService {
         return task;
     }
 
-    public WorkflowTask rejectTask(Long taskId) {
+    public WorkflowTask approveTask(Long taskId) {
+        return approveTask(taskId, null);
+    }
+
+    public WorkflowTask rejectTask(Long taskId, WorkflowTaskActionRequest request) {
         WorkflowTask task = taskRepo.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
@@ -95,6 +102,7 @@ public class WorkflowTaskService {
         }
 
         task.setStatus(WorkflowConstants.TASK_REJECTED);
+        task.setActionComment(normalizeComment(request));
         task = taskRepo.save(task);
 
         WorkflowInstance instance = instanceRepo.findById(task.getInstanceId())
@@ -109,5 +117,18 @@ public class WorkflowTaskService {
         );
 
         return task;
+    }
+
+    public WorkflowTask rejectTask(Long taskId) {
+        return rejectTask(taskId, null);
+    }
+
+    private String normalizeComment(WorkflowTaskActionRequest request) {
+        if (request == null || request.getComment() == null) {
+            return null;
+        }
+
+        String trimmed = request.getComment().trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

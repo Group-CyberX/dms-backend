@@ -22,4 +22,7 @@ public class WorkflowTask {
     private String userId;
 
     private String status;
+
+    @Column(length = 2000)
+    private String actionComment;
 }
