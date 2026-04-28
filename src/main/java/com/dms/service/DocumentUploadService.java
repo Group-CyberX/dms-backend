@@ -35,6 +35,7 @@ public class DocumentUploadService {
     private final DocumentMetadataRepository documentMetadataRepository;
     private final MetadataExtractorService metadataExtractorService;
     private final TagService tagService;
+    private final ProcessingJobService processingJobService; // Added job service
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -71,7 +72,7 @@ public class DocumentUploadService {
             "invoice", "contract", "report", "proposal", "other"
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService) {
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.folderRepository = folderRepository;
@@ -79,6 +80,7 @@ public class DocumentUploadService {
         this.tagService = tagService;
         this.documentMetadataRepository = documentMetadataRepository;
         this.metadataExtractorService = metadataExtractorService;
+        this.processingJobService = processingJobService;
     }
 
     @Transactional
@@ -207,20 +209,21 @@ public class DocumentUploadService {
             // Save tags
             tagService.saveTags(documentId, request.getTags());
 
-            // Run OCR / Text Extraction
-            String extractedText = metadataExtractorService.extractText(file);
-
-            // Create DocumentVersion record
+            // Create DocumentVersion record WITHOUT extracted text initially
             DocumentVersions version = new DocumentVersions();
             version.setVersion_id(versionId);
             version.setDocument_id(documentId);
             version.setVersion_number("1.0");
             version.setS3_bucket_key(savedFileName);
             version.setChecksum(checksum);
-            version.setOcr_content(extractedText); // populate extracted text!
+            version.setOcr_content(null); // Text will be applied async
             version.setCreated_at(LocalDateTime.now());
 
-            documentVersionRepository.save(version);
+            documentVersionRepository.saveAndFlush(version);
+
+            // Queue the Processing Job!
+            com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
+            processingJobService.triggerOcrJobSafely(job.getJobId());
 
             // Save Automatic Metadata (Content-Type and File Size)
             if (file.getContentType() != null) {
@@ -233,24 +236,9 @@ public class DocumentUploadService {
                 documentMetadataRepository.save(new DocumentMetadata(document, "documentType", categoryNormalized));
             }
 
-            // Check and save Digital Signature Metadata exactly matching the UI search statuses
+            // We do a fast digital signature check natively on the file without OCR
             boolean hasSignature = metadataExtractorService.hasDigitalSignature(file);
-            boolean ocrSignature = false;
-
-            if (extractedText != null && !extractedText.isEmpty()) {
-                int wordCount = extractedText.split("\\s+").length;
-                documentMetadataRepository.save(new DocumentMetadata(document, "Word-Count", String.valueOf(wordCount)));
-                
-                // If this is an image/scanned doc, OCR might extract the word "signed" or "signature".
-                if (!hasSignature && (extractedText.toLowerCase().contains("signed by") || extractedText.toLowerCase().contains("signature"))) {
-                    ocrSignature = true;
-                    // Optional logging: keep track that we found it via OCR
-                    documentMetadataRepository.save(new DocumentMetadata(document, "OCR-Signature-Detected", "true"));
-                }
-            }
-
-            // Save the signature search status ('signed' or 'unsigned') directly
-            String sigStatusValue = (hasSignature || ocrSignature) ? "signed" : "unsigned";
+            String sigStatusValue = hasSignature ? "signed" : "unsigned";
             documentMetadataRepository.save(new DocumentMetadata(document, "signatureStatus", sigStatusValue));
 
             return new DocumentUploadResponse(
@@ -279,8 +267,7 @@ public class DocumentUploadService {
                     if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
                 } catch (IOException ignore) {}
             }
-            String errorMsg = "Upload failed: " + (e.getMessage() != null ? e.getMessage() : "Unknown error");
-            return new DocumentUploadResponse(null, null, null, fileName, errorMsg, false);
+            throw e; 
         }
     }
 

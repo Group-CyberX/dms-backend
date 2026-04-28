@@ -33,14 +33,29 @@ public class DocumentMetadata {
         this.value = value;
     }
 
-    public UUID getMetadataId() { return metadataId; }
+    public UUID getMetadataId() { 
+        return metadataId; 
+    }
 
-    public Documents getDocument() { return document; }
-    public void setDocument(Documents document) { this.document = document; }
+    public Documents getDocument() { 
+        return document; 
+    }
+    public void setDocument(Documents document) { 
+        this.document = document; 
+    }
 
-    public String getKey() { return key; }
-    public void setKey(String key) { this.key = key; }
+    public String getKey() {
+         return key; 
+    }
 
-    public String getValue() { return value; }
-    public void setValue(String value) { this.value = value; }
+    public void setKey(String key) { 
+        this.key = key; 
+    }
+
+    public String getValue() {
+         return value; 
+    }
+    public void setValue(String value) {
+         this.value = value; 
+    }
 }

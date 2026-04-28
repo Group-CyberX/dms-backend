@@ -22,19 +22,30 @@ public class MetadataExtractorService {
         String contentType = file.getContentType();
         if (contentType == null) return "";
 
+        try {
+            return extractTextFromBytes(file.getBytes(), contentType, file.getOriginalFilename());
+        } catch (IOException e) {
+            e.printStackTrace();
+            return "";
+        }
+    }
+
+    public String extractTextFromBytes(byte[] fileBytes, String contentType, String originalFilename) {
+        if (contentType == null) return "";
+
         if (contentType.equals("application/pdf")) {
-            return extractTextFromPdf(file);
+            return extractTextFromPdfBytes(fileBytes);
         } else if (contentType.startsWith("image/")) {
-            return extractTextFromImageOcr(file);
+            return extractTextFromImageOcrBytes(fileBytes, originalFilename);
         }
         return "";
     }
 
-    private String extractTextFromImageOcr(MultipartFile file) {
+    private String extractTextFromImageOcrBytes(byte[] fileBytes, String originalFilename) {
         File tempFile = null;
         try {
-            tempFile = File.createTempFile("ocr_", file.getOriginalFilename());
-            file.transferTo(tempFile);
+            tempFile = File.createTempFile("ocr_", originalFilename != null ? originalFilename : "image.png");
+            Files.write(tempFile.toPath(), fileBytes);
 
             Tesseract tesseract = new Tesseract();
             // Pointing to the Homebrew installation of Tesseract on MacOS
@@ -51,8 +62,8 @@ public class MetadataExtractorService {
         }
     }
 
-    private String extractTextFromPdf(MultipartFile file) {
-        try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(file.getBytes())) {
+    private String extractTextFromPdfBytes(byte[] fileBytes) {
+        try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(fileBytes)) {
             PDFTextStripper pdfStripper = new PDFTextStripper();
             String text = pdfStripper.getText(document);
             return text != null ? text.trim() : "";

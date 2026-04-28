@@ -28,6 +28,7 @@ public class DocumentVersionService {
     private final DocumentRepository documentRepository;
     private final MetadataExtractorService metadataExtractorService;
     private final DocumentMetadataRepository documentMetadataRepository;
+    private final ProcessingJobService processingJobService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -64,12 +65,14 @@ public class DocumentVersionService {
                                   DocumentRepository documentRepository,
                                   software.amazon.awssdk.services.s3.S3Client s3Client,
                                   MetadataExtractorService metadataExtractorService,
-                                  DocumentMetadataRepository documentMetadataRepository) {
+                                  DocumentMetadataRepository documentMetadataRepository,
+                                  ProcessingJobService processingJobService) {
         this.documentVersionRepository = documentVersionRepository;
         this.documentRepository = documentRepository;
         this.s3Client = s3Client;
         this.metadataExtractorService = metadataExtractorService;
         this.documentMetadataRepository = documentMetadataRepository;
+        this.processingJobService = processingJobService;
     }
 
     public List<DocumentVersions> listVersions(UUID documentId) {
@@ -125,7 +128,7 @@ public class DocumentVersionService {
         try {
             String checksum = calculateChecksum(file.getBytes());
 
-            String extractedText = metadataExtractorService.extractText(file);
+            String categoryPrefix = extractCategoryPrefix(documentId);
 
             UUID versionId = UUID.randomUUID();
             if ("s3".equalsIgnoreCase(storageType)) {
@@ -144,21 +147,20 @@ public class DocumentVersionService {
             version.setVersion_number(newVersionNumber);
             version.setS3_bucket_key(savedFileName);
             version.setChecksum(checksum);
-            version.setOcr_content(extractedText);
+            version.setOcr_content(null); // Will be populated by async job
             version.setCreated_at(LocalDateTime.now());
 
-            documentVersionRepository.save(version);
+            documentVersionRepository.saveAndFlush(version);
+            
+            // Queue OCR Job
+            com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
+            processingJobService.triggerOcrJobSafely(job.getJobId());
             
             // Save Automatic Metadata (Content-Type and File Size)
             if (file.getContentType() != null) {
                 documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
             }
             documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", String.valueOf(file.getSize()) + " bytes"));
-            if (extractedText != null && !extractedText.isEmpty()) {
-                int wordCount = extractedText.split("\\s+").length;
-                documentMetadataRepository.save(new DocumentMetadata(document, "Word-Count", String.valueOf(wordCount)));
-            }
-
             // update current version pointer
             document.setCurrent_version_id(versionId);
             documentRepository.save(document);
