@@ -51,4 +51,21 @@ public class AuthController {
 
     return "Password reset successful";
     }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(@RequestBody RefreshTokenRequest request) {
+
+        return ResponseEntity.ok(
+                authService.refresh(request.getRefreshToken())
+        );
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(
+            @RequestBody RefreshTokenRequest request) {
+
+        authService.logout(request.getRefreshToken());
+
+        return ResponseEntity.ok("Logged out successfully");
+    }
 }

@@ -9,6 +9,8 @@ import com.dms.models.Role;
 import com.dms.models.User;
 import com.dms.security.JwtUtil;
 import com.dms.dto.LoginResponse;
+import com.dms.dao.RefreshTokenRepository;
+import com.dms.models.RefreshToken;
 
 import com.dms.util.PermissionUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,17 +26,20 @@ public class AuthService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     public AuthService(UserRepository userRepository,
                        RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtUtil jwtUtil) {
+                       JwtUtil jwtUtil,
+                       RefreshTokenRepository refreshTokenRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
-
+    // Register
     public RegisterResponse register(RegisterRequest request) {
         User user = new User();
         user.setUsername(request.getFirstName() + " " + request.getLastName());
@@ -44,7 +49,8 @@ public class AuthService {
         user.setCreatedAt(LocalDateTime.now());
         user.setPhone(request.getPhone());
 
-        Role role = roleRepository.findByName("USER").orElseThrow();
+        Role role = roleRepository.findByName("USER")
+                .orElseThrow(()-> new RuntimeException("Default Role Not Found"));
         user.setRole(role);
 
         User savedUser = userRepository.save(user);
@@ -54,23 +60,28 @@ public class AuthService {
                 savedUser.getEmail()
         );
     }
-
+    //Login
     public LoginResponse login(LoginRequest request) {
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        boolean isMatch = passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
+        boolean isMatch = passwordEncoder.matches(
+                request.getPassword(),
+                user.getPasswordHash());
 
         if (!isMatch) {
             throw new RuntimeException("Invalid email or password");
         }
 
-        //Generate JWT
-        String token = jwtUtil.generateToken(
+        // Generate access token
+        String accessToken = jwtUtil.generateToken(
                 user.getEmail(),
                 user.getRole().getName()
         );
+
+        // Generate refresh token
+        String refreshToken = createRefreshToken(user);
 
         // Role
         String roleName = user.getRole().getName();
@@ -86,7 +97,8 @@ public class AuthService {
         //Return full response
         return new LoginResponse(
                 user.getEmail(),
-                token,
+                accessToken,
+                refreshToken,
                 roleName,
                 permissions
         );
@@ -120,9 +132,11 @@ public class AuthService {
             throw new RuntimeException("Invalid token");
         }
 
-        if (user.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
+        if (user.getResetTokenExpiry() == null ||
+                user.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
             throw new RuntimeException("Token expired");
         }
+
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
 
@@ -139,10 +153,61 @@ public class AuthService {
         refreshToken.setToken(token);
         refreshToken.setUser(user);
         refreshToken.setExpiryDate(LocalDateTime.now().plusDays(7));
+        refreshToken.setRevoked(false);
 
         refreshTokenRepository.save(refreshToken);
 
         return token;
     }
 
+    public LoginResponse refresh(String requestToken) {
+
+        RefreshToken token = refreshTokenRepository.findByToken(requestToken)
+                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+
+        // Check revoked
+        if (token.isRevoked()) {
+            throw new RuntimeException("Token revoked");
+        }
+
+        // Check expiry
+        if (token.getExpiryDate().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Token expired");
+        }
+
+        User user = token.getUser();
+
+        // Generate new access token
+        String newAccessToken = jwtUtil.generateToken(
+                user.getEmail(),
+                user.getRole().getName()
+        );
+
+        String roleName = user.getRole().getName();
+
+        Map<String, Boolean> permissions =
+                PermissionUtil.parsePermissions(
+                        user.getRole().getPermissions() != null
+                                ? user.getRole().getPermissions()
+                                : "{}"
+                );
+
+        return new LoginResponse(
+                user.getEmail(),
+                newAccessToken,
+                requestToken,
+                roleName,
+                permissions
+        );
+    }
+
+    public void logout(String requestToken) {
+
+        RefreshToken token = refreshTokenRepository.findByToken(requestToken)
+                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+
+        token.setRevoked(true);
+
+        refreshTokenRepository.save(token);
+    }
 }
