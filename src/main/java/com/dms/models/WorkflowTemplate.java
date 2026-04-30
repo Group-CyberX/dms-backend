@@ -16,17 +16,11 @@ public class WorkflowTemplate {
     private Long id;
 
     private String name;
-
     private String description;
-
     private String documentType;
-
     private int numberOfSteps;
-
     private String workflowType;
-
     private String createdBy;
-
     private boolean isSystemTemplate;
 
     private LocalDateTime createdAt;

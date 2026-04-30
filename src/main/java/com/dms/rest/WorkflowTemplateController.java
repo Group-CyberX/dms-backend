@@ -15,15 +15,18 @@ public class WorkflowTemplateController {
 
     private final WorkflowTemplateService templateService;
 
+    // Constructor injection of service layer
     public WorkflowTemplateController(WorkflowTemplateService templateService) {
         this.templateService = templateService;
     }
 
+    // Create new template
     @PostMapping
     public WorkflowTemplate createTemplate(@RequestBody CreateWorkflowTemplateRequest request) {
         return templateService.createTemplate(request);
     }
 
+    // Update existing template
     @PutMapping("/{templateId}")
     public WorkflowTemplate updateTemplate(
             @PathVariable Long templateId,
@@ -32,16 +35,19 @@ public class WorkflowTemplateController {
         return templateService.updateTemplate(templateId, request);
     }
 
+    // Delete template
     @DeleteMapping("/{templateId}")
     public void deleteTemplate(@PathVariable Long templateId) {
         templateService.deleteTemplate(templateId);
     }
 
+    // Get all templates
     @GetMapping
     public List<WorkflowTemplate> getAllTemplates() {
         return templateService.getAllTemplates();
     }
 
+    // Get single template by ID
     @GetMapping("/{templateId}")
     public WorkflowTemplate getTemplateById(@PathVariable Long templateId) {
         return templateService.getAllTemplates().stream()
@@ -53,11 +59,13 @@ public class WorkflowTemplateController {
                 ));
     }
 
+    // Get templates by document type
     @GetMapping("/by-document-type/{documentType}")
     public List<WorkflowTemplate> getTemplatesByDocumentType(@PathVariable String documentType) {
         return templateService.getTemplatesByDocumentType(documentType);
     }
 
+    // Get steps of a specific template
     @GetMapping("/{templateId}/steps")
     public List<WorkflowTemplateStep> getStepsByTemplateId(@PathVariable Long templateId) {
         return templateService.getStepsByTemplateId(templateId);

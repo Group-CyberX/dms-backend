@@ -14,6 +14,7 @@ public class CreateWorkflowTemplateRequest {
     private boolean systemTemplate;
     private List<StepApprover> stepApprovers;
 
+    // Inner DTO representing each step's approver details
     @Data
     public static class StepApprover {
         private int stepOrder;
