@@ -9,15 +9,11 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 @Service
 public class MetadataExtractorService {
 
-    /**
-     * Attempts to extract text using Tesseract OCR for images or Apache PDFBox for PDFs.
-     */
+    // Extract text from an uploaded file based on content type
     public String extractText(MultipartFile file) {
         String contentType = file.getContentType();
         if (contentType == null) return "";
@@ -30,6 +26,7 @@ public class MetadataExtractorService {
         }
     }
 
+    // Route byte-based extraction to PDF or image OCR handlers
     public String extractTextFromBytes(byte[] fileBytes, String contentType, String originalFilename) {
         if (contentType == null) return "";
 
@@ -41,6 +38,7 @@ public class MetadataExtractorService {
         return "";
     }
 
+    // Extract text from image bytes using Tesseract OCR
     private String extractTextFromImageOcrBytes(byte[] fileBytes, String originalFilename) {
         File tempFile = null;
         try {
@@ -62,6 +60,7 @@ public class MetadataExtractorService {
         }
     }
 
+    // Extract text from PDF bytes using PDFBox
     private String extractTextFromPdfBytes(byte[] fileBytes) {
         try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(fileBytes)) {
             PDFTextStripper pdfStripper = new PDFTextStripper();
@@ -73,9 +72,7 @@ public class MetadataExtractorService {
         }
     }
 
-    /**
-     * Checks if a PDF file has any digital signatures.
-     */
+    // Check whether a PDF file contains digital signatures
     public boolean hasDigitalSignature(MultipartFile file) {
         if (file.getContentType() != null && file.getContentType().equals("application/pdf")) {
             try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(file.getBytes())) {

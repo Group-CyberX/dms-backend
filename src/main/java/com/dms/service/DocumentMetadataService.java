@@ -24,7 +24,7 @@ public class DocumentMetadataService {
         this.documentRepository = documentRepository;
     }
 
-    // Add metadata to document
+    // Add metadata to a document or update it if the key already exists
     public DocumentMetadata addMetadata(UUID documentId, String key, String value) {
 
     Documents document = documentRepository.findById(documentId)
@@ -42,17 +42,17 @@ public class DocumentMetadataService {
     DocumentMetadata metadata = new DocumentMetadata(document, key, value);
     return metadataRepository.save(metadata);
 }
-    // Get all metadata for a document
+    // Get all metadata entries for a document
     public List<DocumentMetadata> getDocumentMetadata(UUID documentId) {
         return metadataRepository.findByDocument_document_id(documentId);
     }
 
-    // Get specific metadata by key
+    // Get a specific metadata entry by key
     public Optional<DocumentMetadata> getMetadataByKey(UUID documentId, String key) {
         return metadataRepository.findByDocument_document_idAndKey(documentId, key);
     }
 
-    // Update metadata
+    // Update a metadata value by key
     public DocumentMetadata updateMetadata(UUID documentId, String key, String newValue) {
         Optional<DocumentMetadata> existing = metadataRepository.findByDocument_document_idAndKey(documentId, key);
         
@@ -65,23 +65,23 @@ public class DocumentMetadataService {
         throw new RuntimeException("Metadata not found for document: " + documentId + ", key: " + key);
     }
 
-    // Delete metadata by key
+    // Delete a metadata entry by key
     public void deleteMetadata(UUID documentId, String key) {
         metadataRepository.deleteByDocument_document_idAndKey(documentId, key);
     }
 
-    // Delete all metadata for a document
+    // Delete all metadata entries for a document
     public void deleteAllMetadata(UUID documentId) {
     List<DocumentMetadata> metadata = metadataRepository.findByDocument_document_id(documentId);
     metadataRepository.deleteAll(metadata);
 }
 
-    // Get metadata by metadataId
+// Get metadata by metadata ID
 public Optional<DocumentMetadata> getMetadataById(UUID metadataId) {
     return metadataRepository.findById(metadataId);
 }
 
-// Update metadata by metadataId
+// Update metadata value by metadata ID
 public DocumentMetadata updateMetadataById(UUID metadataId, String newValue) {
     DocumentMetadata metadata = metadataRepository.findById(metadataId)
             .orElseThrow(() -> new RuntimeException("Metadata not found: " + metadataId));
@@ -89,11 +89,12 @@ public DocumentMetadata updateMetadataById(UUID metadataId, String newValue) {
     return metadataRepository.save(metadata);
 }
 
-// Delete metadata by metadataId
+// Delete metadata by metadata ID
 public void deleteMetadataById(UUID metadataId) {
     metadataRepository.deleteById(metadataId);
 }
 
+// Add multiple metadata entries with upsert behavior
 public List<DocumentMetadata> addMultipleMetadata(
         UUID documentId,
         List<MetadataRequestDTO> requests) {

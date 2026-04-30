@@ -12,6 +12,7 @@ import java.util.UUID;
 @Repository
 public interface SearchLogRepository extends JpaRepository<SearchLog, UUID> {
 
+    // Fetch search history with clicked document details sorted by latest first
     @Query("SELECT new com.dms.dto.SearchHistoryResponseDTO(sl.searchId, sl.query, d.document_id, d.title, sl.timestamp) " +
            "FROM SearchLog sl JOIN Documents d ON sl.clickedDocId = d.document_id " +
            "ORDER BY sl.timestamp DESC")
