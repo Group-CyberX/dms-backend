@@ -32,10 +32,12 @@ public class ShareLinkController {
             @RequestBody CreateShareLinkRequest request,
             Authentication auth
     ) {
+        // Ensure user is authenticated
         if (auth == null || !auth.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
+        // Get user ID from authentication
         String email = auth.getName();
 
         User user = userRepository.findByEmail(email)
@@ -74,10 +76,12 @@ public class ShareLinkController {
             Authentication auth
     ) {
 
+        // Extract password from request body (if provided)
         String password = body != null ? body.get("password") : null;
 
         UUID userId = null;
 
+        // If user logged in, get user ID from authentication
         if (auth != null && auth.isAuthenticated()) {
 
             String email = auth.getName();
@@ -93,7 +97,7 @@ public class ShareLinkController {
         );
     }
 
-
+        // Download document through share link
         @GetMapping("/{token}/download")
         public ResponseEntity<byte[]> download(
                 @PathVariable String token,
@@ -103,6 +107,7 @@ public class ShareLinkController {
 
             UUID userId = null;
 
+            // Get user if authenticated
             if (auth != null && auth.isAuthenticated()) {
                 String email = auth.getName();
                 User user = userRepository.findByEmail(email)
