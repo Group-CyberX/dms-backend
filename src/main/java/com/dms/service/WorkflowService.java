@@ -22,6 +22,7 @@ public class WorkflowService {
     private final WorkflowTemplateService templateService;
     private final DocumentLifecycleService documentLifecycleService;
 
+    // Constructor injection of dependencies
     public WorkflowService(
             WorkflowInstanceRepository instanceRepo,
             WorkflowTaskRepository taskRepo,
@@ -36,6 +37,7 @@ public class WorkflowService {
         this.documentLifecycleService = documentLifecycleService;
     }
 
+    // Main method to create workflow (manual or template-based)
     public WorkflowInstance createWorkflow(CreateWorkflowRequest request) {
 
         if (request.getDocumentId() == null || request.getDocumentId().isBlank()) {
@@ -56,18 +58,18 @@ public class WorkflowService {
         // Manual workflow                 
         if (finalTemplateId == null) {
 
-            // Must be manual workflow, validate approvers
+            // Must provide approvers for manual workflow
             if (request.getApprovers() == null || request.getApprovers().isEmpty()) {
                 throw new RuntimeException("Approvers are required for manual workflow");
             }
 
             if (request.isSaveAsTemplate()) {
-                // Manual → save as template   
+                // Convert manual workflow → save as reusable template   
                 WorkflowTemplate newTemplate =
                         templateService.createTemplateFromManualWorkflow(request);
                 finalTemplateId = newTemplate.getId();
             } else {
-                // Manual  → NO template
+                // Pure manual workflow (no template)
                 finalTemplateId = null;
             }
         }
@@ -78,6 +80,8 @@ public class WorkflowService {
         instance.setWorkflowName(request.getWorkflowName());
         instance.setPriority(request.getPriority());
         instance.setDueDate(request.getDueDate());
+
+        // Default status
         instance.setStatus(WorkflowConstants.WORKFLOW_PENDING_APPROVAL);
         instance.setCreatedByUserId(request.getCreatedByUserId());
 
@@ -89,7 +93,8 @@ public class WorkflowService {
         );
 
         if (finalTemplateId != null) {
-            // Template-driven flow
+
+            // Template-based workflow
             List<WorkflowTemplateStep> steps =
                     stepRepo.findByTemplateIdOrderByStepOrderAsc(finalTemplateId);
 
@@ -107,11 +112,14 @@ public class WorkflowService {
         return instance;
     }
 
+    // Create tasks based on template steps
     private void createTasksFromTemplate(WorkflowInstance instance, List<WorkflowTemplateStep> steps) {
         for (WorkflowTemplateStep step : steps) {
             WorkflowTask task = new WorkflowTask();
+
             task.setInstanceId(instance.getId());
             task.setStepOrder(step.getStepOrder());
+            // If approverUserId is set → assign to that user; otherwise assign to role 
             task.setUserId(
                     step.getApproverUserId() != null && !step.getApproverUserId().isBlank()
                             ? step.getApproverUserId()
@@ -122,6 +130,7 @@ public class WorkflowService {
         }
     }
 
+    // Create tasks manually (no template)
     private void createTasksManual(WorkflowInstance instance, List<String> approvers) {
         int order = 1;
         for (String role : approvers) {
@@ -134,6 +143,7 @@ public class WorkflowService {
         }
     }
 
+    // Fetch all workflow instances (for listing / My Tasks page)
     public List<WorkflowInstance> getAllWorkflows() {
         return instanceRepo.findAll();
     }
