@@ -20,13 +20,16 @@ public class ApproverController {
         this.userService = userService;
     }
 
+    // Get list of available approvers
     @GetMapping
     public List<ApproverOptionDTO> getApproverOptions() {
         return userService.getApproverOptions();
     }
 
+    // Get currently logged-in user details
     @GetMapping("/me")
     public ApproverOptionDTO getCurrentUser(@AuthenticationPrincipal UserDetails userDetails) {
+        // If no user is authenticated
         if (userDetails == null) {
             throw new RuntimeException("Unauthorized");
         }

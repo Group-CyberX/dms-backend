@@ -2,6 +2,7 @@ package com.dms.dto;
 
 import java.util.UUID;
 
+// This is mainly used for dropdowns when selecting approvers
 public class ApproverOptionDTO {
     private UUID userId;
     private String username;

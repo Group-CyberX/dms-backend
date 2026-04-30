@@ -18,17 +18,20 @@ public class WorkflowTaskController {
         this.workflowTaskService = workflowTaskService;
     }
 
+    // Get all tasks for a specific workflow instance
     @GetMapping("/instance/{instanceId}")
     public List<WorkflowTask> getTasksByInstance(@PathVariable Long instanceId) {
         return workflowTaskService.getTasksByInstanceId(instanceId);
     }
 
+    // Approve a task
     @PostMapping("/{taskId}/approve")
     public WorkflowTask approveTask(@PathVariable Long taskId,
                                     @RequestBody(required = false) WorkflowTaskActionRequest request) {
         return workflowTaskService.approveTask(taskId, request);
     }
 
+    // Reject a task
     @PostMapping("/{taskId}/reject")
     public WorkflowTask rejectTask(@PathVariable Long taskId,
                                    @RequestBody(required = false) WorkflowTaskActionRequest request) {
