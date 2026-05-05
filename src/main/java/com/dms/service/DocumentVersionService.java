@@ -31,6 +31,14 @@ public class DocumentVersionService {
     @Value("${app.upload.max-bytes:104857600}") // default 100MB
     private long maxUploadBytes;
 
+    @Value("${app.storage.type:local}")
+    private String storageType;
+
+    @Value("${app.s3.bucket:}")
+    private String bucket;
+
+    private final software.amazon.awssdk.services.s3.S3Client s3Client;
+
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -49,9 +57,11 @@ public class DocumentVersionService {
     );
 
     public DocumentVersionService(DocumentVersionRepository documentVersionRepository,
-                                  DocumentRepository documentRepository) {
+                                  DocumentRepository documentRepository,
+                                  software.amazon.awssdk.services.s3.S3Client s3Client) {
         this.documentVersionRepository = documentVersionRepository;
         this.documentRepository = documentRepository;
+        this.s3Client = s3Client;
     }
 
     public List<DocumentVersions> listVersions(UUID documentId) {
@@ -103,11 +113,21 @@ public class DocumentVersionService {
         }
 
         String savedFileName = null;
+        boolean storedInS3 = false;
         try {
             String checksum = calculateChecksum(file.getBytes());
 
+            // Extract category prefix from existing version to maintain same folder structure
+            String categoryPrefix = extractCategoryPrefix(documentId);
+
             UUID versionId = UUID.randomUUID();
-            savedFileName = saveFileWithProvidedName(file, documentId, versionId, original);
+            if ("s3".equalsIgnoreCase(storageType)) {
+                savedFileName = buildStorageKey(documentId, versionId, original, categoryPrefix);
+                uploadToS3(savedFileName, file);
+                storedInS3 = true;
+            } else {
+                savedFileName = saveFileWithProvidedName(file, documentId, versionId, original, categoryPrefix);
+            }
 
             String newVersionNumber = nextVersionNumber(documentId);
 
@@ -129,12 +149,16 @@ public class DocumentVersionService {
             return version;
         } catch (NoSuchAlgorithmException e) {
             if (savedFileName != null) {
-                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
+                try {
+                    if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
+                } catch (IOException ignore) {}
             }
             throw new IOException("Error calculating file checksum: " + e.getMessage(), e);
         } catch (RuntimeException e) {
             if (savedFileName != null) {
-                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
+                try {
+                    if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
+                } catch (IOException ignore) {}
             }
             throw e;
         }
@@ -168,7 +192,13 @@ public class DocumentVersionService {
 
         // delete file from storage if present
         if (version.getS3_bucket_key() != null) {
-            try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(version.getS3_bucket_key())); } catch (IOException ignore) {}
+            try {
+                if ("s3".equalsIgnoreCase(storageType)) {
+                    deleteFromS3(version.getS3_bucket_key());
+                } else {
+                    Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(version.getS3_bucket_key()));
+                }
+            } catch (IOException ignore) {}
         }
         documentVersionRepository.deleteById(versionId);
     }
@@ -200,13 +230,64 @@ public class DocumentVersionService {
         return original.substring(idx + 1);
     }
 
-    private String saveFileWithProvidedName(MultipartFile file, UUID documentId, UUID versionId, String original) throws IOException {
+    private String saveFileWithProvidedName(MultipartFile file, UUID documentId, UUID versionId, String original, String categoryPrefix) throws IOException {
         Path uploadPath = Paths.get(resolveUploadDir());
+        
+        // Build subdirectories with category prefix if present
+        if (categoryPrefix != null && !categoryPrefix.isBlank()) {
+            uploadPath = uploadPath.resolve(categoryPrefix);
+        }
+        
+        uploadPath = uploadPath.resolve(documentId.toString()).resolve(versionId.toString());
         Files.createDirectories(uploadPath);
-        String fileName = documentId + "_" + versionId + "_" + original;
-        Path filePath = uploadPath.resolve(fileName);
+        
+        Path filePath = uploadPath.resolve(original);
         Files.write(filePath, file.getBytes());
-        return fileName;
+        
+        // Return relative path for local storage
+        String relativePath = (categoryPrefix != null && !categoryPrefix.isBlank()) 
+            ? categoryPrefix + "/" + documentId + "/" + versionId + "/" + original
+            : documentId + "/" + versionId + "/" + original;
+        
+        return relativePath;
+    }
+
+    private String buildStorageKey(UUID documentId, UUID versionId, String original) {
+        return documentId + "/" + versionId + "/" + original;
+    }
+
+    private String buildStorageKey(UUID documentId, UUID versionId, String original, String categoryPrefix) {
+        if (categoryPrefix == null || categoryPrefix.isBlank()) {
+            return buildStorageKey(documentId, versionId, original);
+        }
+        return categoryPrefix + "/" + documentId + "/" + versionId + "/" + original;
+    }
+
+    private void uploadToS3(String key, MultipartFile file) throws IOException {
+        if (bucket == null || bucket.isBlank()) {
+            throw new IOException("S3 bucket is not configured");
+        }
+        software.amazon.awssdk.services.s3.model.PutObjectRequest req =
+                software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .contentType(file.getContentType())
+                        .build();
+        s3Client.putObject(req, software.amazon.awssdk.core.sync.RequestBody.fromBytes(file.getBytes()));
+    }
+
+    private void deleteFromS3(String key) throws IOException {
+        try {
+            if (bucket == null || bucket.isBlank()) return;
+            software.amazon.awssdk.services.s3.model.DeleteObjectRequest del =
+                    software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .build();
+            s3Client.deleteObject(del);
+        } catch (software.amazon.awssdk.core.exception.SdkException e) {
+            throw new IOException("Failed to delete S3 object: " + e.getMessage(), e);
+        }
     }
 
     private String calculateChecksum(byte[] fileBytes) throws NoSuchAlgorithmException {
@@ -241,5 +322,69 @@ public class DocumentVersionService {
             }
         }
         return next + ".0";
+    }
+
+    private String extractCategoryPrefix(UUID documentId) {
+        // Get the first version to extract category prefix from its path
+        List<DocumentVersions> versions = documentVersionRepository.findByDocument_idOrderByCreated_atDesc(documentId);
+        if (versions.isEmpty()) {
+            return null;
+        }
+        
+        String existingKey = versions.get(0).getS3_bucket_key();
+        if (existingKey == null) {
+            return null;
+        }
+        
+        // Check if the key starts with a category prefix (before documentId)
+        String docIdStr = documentId.toString();
+        int docIdIndex = existingKey.indexOf(docIdStr);
+        
+        if (docIdIndex > 0) {
+            // There's a prefix before documentId - extract it (remove trailing slash)
+            return existingKey.substring(0, docIdIndex - 1);
+        }
+        
+        return null;
+    }
+
+    public byte[] getVersionFileBytes(UUID documentId, UUID versionId) throws IOException {
+        DocumentVersions version = documentVersionRepository.findById(versionId)
+                .filter(v -> v.getDocument_id().equals(documentId))
+                .orElseThrow(() -> new IllegalArgumentException("Version not found"));
+
+        if (version.getS3_bucket_key() == null) {
+            throw new IOException("File not found for version");
+        }
+
+        if ("s3".equalsIgnoreCase(storageType)) {
+            return getFileFromS3(version.getS3_bucket_key());
+        } else {
+            return getFileFromLocal(version.getS3_bucket_key());
+        }
+    }
+
+    private byte[] getFileFromS3(String key) throws IOException {
+        try {
+            if (bucket == null || bucket.isBlank()) {
+                throw new IOException("S3 bucket is not configured");
+            }
+            software.amazon.awssdk.services.s3.model.GetObjectRequest req =
+                    software.amazon.awssdk.services.s3.model.GetObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(key)
+                            .build();
+            return s3Client.getObject(req).readAllBytes();
+        } catch (software.amazon.awssdk.core.exception.SdkException e) {
+            throw new IOException("Failed to retrieve S3 object: " + e.getMessage(), e);
+        }
+    }
+
+    private byte[] getFileFromLocal(String fileName) throws IOException {
+        Path filePath = Paths.get(resolveUploadDir()).resolve(fileName);
+        if (!Files.exists(filePath)) {
+            throw new IOException("File not found: " + fileName);
+        }
+        return Files.readAllBytes(filePath);
     }
 }

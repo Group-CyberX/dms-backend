@@ -6,6 +6,7 @@ public class DocumentUploadResponse {
     private UUID documentId;
     private UUID versionId;
     private String title;
+    private String fileName;
     private String message;
     private boolean success;
 
@@ -15,6 +16,16 @@ public class DocumentUploadResponse {
         this.documentId = documentId;
         this.versionId = versionId;
         this.title = title;
+        this.fileName = null;
+        this.message = message;
+        this.success = success;
+    }
+
+    public DocumentUploadResponse(UUID documentId, UUID versionId, String title, String fileName, String message, boolean success) {
+        this.documentId = documentId;
+        this.versionId = versionId;
+        this.title = title;
+        this.fileName = fileName;
         this.message = message;
         this.success = success;
     }
@@ -41,6 +52,14 @@ public class DocumentUploadResponse {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
     }
 
     public String getMessage() {

@@ -1,11 +1,11 @@
 package com.dms.models;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+
 import java.util.UUID;
 
 @Entity(name = "Documents")
@@ -35,6 +35,9 @@ public class Documents {
 
     @Column(name = "is_deleted")
     private boolean is_deleted;
+
+    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DocumentMetadata> metadata = new ArrayList<>();
 
     public Documents(UUID document_id,
                    String title,
@@ -134,5 +137,15 @@ public class Documents {
                 ", is_locked=" + is_locked +
                 ", is_deleted=" + is_deleted +
                 '}';
+    }
+
+    
+
+    public List<DocumentMetadata> getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(List<DocumentMetadata> metadata) {
+        this.metadata = metadata;
     }
 }

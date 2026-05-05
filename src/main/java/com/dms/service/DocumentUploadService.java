@@ -2,10 +2,13 @@ package com.dms.service;
 
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.DocumentVersionRepository;
+import com.dms.dao.FolderRepository;
 import com.dms.dto.DocumentUploadResponse;
 import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
 import com.dms.models.DocumentVersions;
+import com.dms.models.Folders;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,12 +30,22 @@ public class DocumentUploadService {
 
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
+    private final FolderRepository folderRepository;
+    private final TagService tagService;
     private final NotificationService notificationService;
+    private final software.amazon.awssdk.services.s3.S3Client s3Client;
+
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
-    @Value("${app.upload.max-bytes:104857600}") // 100MB default
+    @Value("${app.upload.max-bytes:104857600}")
     private long maxUploadBytes;
+
+    @Value("${app.storage.type:local}")
+    private String storageType;
+
+    @Value("${app.s3.bucket:}")
+    private String bucket;
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf",
@@ -51,213 +64,214 @@ public class DocumentUploadService {
             Pattern.CASE_INSENSITIVE
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, NotificationService notificationService) {
+    private static final Set<String> ALLOWED_CATEGORIES = Set.of(
+            "invoice", "contract", "report", "proposal", "other"
+    );
+
+    public DocumentUploadService(
+            DocumentRepository documentRepository,
+            DocumentVersionRepository documentVersionRepository,
+            FolderRepository folderRepository,
+            software.amazon.awssdk.services.s3.S3Client s3Client,
+            TagService tagService,
+            NotificationService notificationService
+    ) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
+        this.folderRepository = folderRepository;
+        this.s3Client = s3Client;
+        this.tagService = tagService;
         this.notificationService = notificationService;
     }
 
     @Transactional
     public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request) throws IOException {
+
+        String fileName = file != null ? file.getOriginalFilename() : "unknown";
+
         if (file == null || file.isEmpty()) {
-            return new DocumentUploadResponse(null, null, null, "File is empty", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "File is empty", false);
         }
 
-        // Basic metadata validations
         String title = request.getTitle() == null ? null : request.getTitle().trim();
         if (title == null || title.isEmpty()) {
-            return new DocumentUploadResponse(null, null, null, "Title is required", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Title is required", false);
         }
-        if (title.length() > 200) {
-            return new DocumentUploadResponse(null, null, null, "Title must be at most 200 characters", false);
-        }
-        if (request.getDescription() != null && request.getDescription().length() > 1000) {
-            return new DocumentUploadResponse(null, null, null, "Description must be at most 1000 characters", false);
-        }
-        if (request.getTags() != null) {
-            String tags = request.getTags();
-            if (tags.length() > 200) {
-                return new DocumentUploadResponse(null, null, null, "Tags must be at most 200 characters", false);
+
+        UUID effectiveFolderId = request.getFolderId();
+        String categoryNormalized = null;
+
+        // Handle category → folder auto creation
+        if (effectiveFolderId == null) {
+            categoryNormalized = (request.getCategory() == null || request.getCategory().isBlank())
+                    ? "other"
+                    : request.getCategory().trim().toLowerCase();
+
+            if (!ALLOWED_CATEGORIES.contains(categoryNormalized)) {
+                return new DocumentUploadResponse(null, null, null, fileName, "Invalid category", false);
             }
-            if (!isValidTags(tags)) {
-                return new DocumentUploadResponse(null, null, null, "Tags must be comma-separated values using only letters, numbers, dash or underscore", false);
-            }
+
+            Folders folder = folderRepository.findByNameIgnoreCase(categoryNormalized)
+                    .orElseGet(() -> {
+                        Folders f = new Folders();
+                        f.setFolder_id(UUID.randomUUID());
+                        f.setName(categoryNormalized);
+                        f.setPath(categoryNormalized);
+                        return folderRepository.save(f);
+                    });
+
+            effectiveFolderId = folder.getFolder_id();
+        }
+
+        // Duplicate check
+        if (documentRepository.existsByTitleInFolder(title, effectiveFolderId)) {
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "Document already exists in this folder", false);
         }
 
         // File validations
         if (file.getSize() > maxUploadBytes) {
-            return new DocumentUploadResponse(null, null, null, "File exceeds maximum allowed size", false);
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "File too large", false);
         }
 
-        // Validate original filename and extension
         String original = sanitizeOriginalFilename(file.getOriginalFilename());
         if (original == null || !SAFE_FILENAME.matcher(original).matches()) {
-            return new DocumentUploadResponse(null, null, null, "Invalid file name. Use only letters, numbers, dash, underscore and a supported extension (pdf, docx, xlsx, png, jpg, jpeg)", false);
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "Invalid file name", false);
         }
+
         String ext = getFileExtension(original);
         if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-            return new DocumentUploadResponse(null, null, null, "Unsupported file extension: ." + ext, false);
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "Unsupported file type", false);
         }
 
-        String contentType = file.getContentType();
-        if (contentType != null && !ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            // If reported content type is not in allowlist, still allow if extension is allowed and content type is generic
-            if (!ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-                return new DocumentUploadResponse(null, null, null, "Unsupported file type: " + contentType, false);
-            }
-        }
-
-        // Duplicate check by title in same folder
-        if (documentRepository.existsByTitleInFolder(title, request.getFolderId())) {
-            return new DocumentUploadResponse(null, null, null, "A document with the same title already exists in this folder", false);
-        }
-
-        // Generate IDs
         UUID documentId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
 
-        String savedFileName = null;
+        String storedKey = null;
+        boolean isS3 = "s3".equalsIgnoreCase(storageType);
+
         try {
-            // Calculate checksum
-            String checksum = calculateChecksum(file.getBytes());  
+            String checksum = calculateChecksum(file.getBytes());
 
-            // Save file locally (you can replace this with S3 upload)
-            savedFileName = saveFileWithProvidedName(file, documentId, versionId, original);
+            // STORAGE
+            if (isS3) {
+                storedKey = buildStorageKey(documentId, versionId, original, categoryNormalized);
+                uploadToS3(storedKey, file);
+            } else {
+                storedKey = saveLocal(file, documentId, versionId, original, categoryNormalized);
+            }
 
-            // Create Document record
-            Documents document = new Documents();
-            document.setDocument_id(documentId);
-            document.setTitle(title);
-            document.setOwner_id(UUID.fromString("00000000-0000-0000-0000-000000000000")); // TODO: Get from current user
-            document.setFolder_id(request.getFolderId());
-            document.setCurrent_version_id(versionId);
-            document.setCreated_at(LocalDateTime.now());
-            document.setIs_locked(false);
-            document.setIs_deleted(false);
+            // SAVE DOCUMENT
+            Documents doc = new Documents();
+            doc.setDocument_id(documentId);
+            doc.setTitle(title);
+            doc.setOwner_id(UUID.fromString("00000000-0000-0000-0000-000000000000"));
+            doc.setFolder_id(effectiveFolderId);
+            doc.setCurrent_version_id(versionId);
+            doc.setCreated_at(LocalDateTime.now());
+            doc.setIs_deleted(false);
+            doc.setIs_locked(false);
 
-            documentRepository.save(document);
+            documentRepository.save(doc);
 
-            // Create DocumentVersion record
+            tagService.saveTags(documentId, request.getTags());
+
             DocumentVersions version = new DocumentVersions();
             version.setVersion_id(versionId);
             version.setDocument_id(documentId);
             version.setVersion_number("1.0");
-            version.setS3_bucket_key(savedFileName);
+            version.setS3_bucket_key(storedKey);
             version.setChecksum(checksum);
-            version.setOcr_content(""); // OCR content can be populated later
             version.setCreated_at(LocalDateTime.now());
 
             documentVersionRepository.save(version);
 
-            return new DocumentUploadResponse(
-                    documentId,
-                    versionId,
-                    title,
-                    "Document uploaded successfully",
-                    true
+            // ✅ NOTIFICATION (your feature added)
+            notificationService.sendNotification(
+                    UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90"),
+                    "Document uploaded: " + title
             );
-        } catch (NoSuchAlgorithmException e) {
-            // Cleanup saved file if checksum/file processing failed after save
-            if (savedFileName != null) {
-                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
-            }
-            return new DocumentUploadResponse(null, null, null, "Error calculating file checksum: " + e.getMessage(), false);
-        } catch (RuntimeException e) {
-            // On any unchecked exception, attempt to remove file to keep FS consistent with rolled-back DB
-            if (savedFileName != null) {
-                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
-            }
-            throw e;
+
+            return new DocumentUploadResponse(documentId, versionId, title,
+                    fileName, "Upload successful", true);
+
         } catch (Exception e) {
-            if (savedFileName != null) {
-                try { Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName)); } catch (IOException ignore) {}
+
+            // rollback storage
+            if (storedKey != null) {
+                try {
+                    if (isS3) deleteFromS3(storedKey);
+                    else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(storedKey));
+                } catch (Exception ignore) {}
             }
-            throw e;
+
+            notificationService.sendNotification(
+                    UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90"),
+                    "Upload failed: " + e.getMessage()
+            );
+
+            return new DocumentUploadResponse(null, null, null,
+                    fileName, "Upload failed", false);
         }
     }
 
-    /**
-     * Save file to local storage or S3
-     * TODO: Integrate with actual S3 storage
-     */
-    private String saveFile(MultipartFile file, UUID documentId, UUID versionId) throws IOException {
-        // Create upload directory if it doesn't exist
-        Path uploadPath = Paths.get(resolveUploadDir());
-        Files.createDirectories(uploadPath);
-
-        // Generate file name
-        String original = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
-        String fileName = documentId + "_" + versionId + "_" + original;
-        Path filePath = uploadPath.resolve(fileName);
-
-        // Save file
-        Files.write(filePath, file.getBytes());
-
-        // Return the S3 bucket key (or file path for local storage)
-        return fileName;
-    }
+    // ---------------- HELPERS ----------------
 
     private String resolveUploadDir() {
-        // Normalize to ensure no trailing separators issues
-        String dir = uploadDir;
-        if (dir == null || dir.isBlank()) {
-            dir = "uploads";
-        }
-        return dir;
+        return (uploadDir == null || uploadDir.isBlank()) ? "uploads" : uploadDir;
     }
 
-    // Validate tags: comma-separated tokens with [A-Za-z0-9_-]+
-    private boolean isValidTags(String tags) {
-        String[] parts = tags.split(",");
-        for (String raw : parts) {
-            String t = raw.trim();
-            if (t.isEmpty()) return false;
-            if (!t.matches("[A-Za-z0-9_-]+")) return false;
-        }
-        return true;
-    }
-
-    // Ensure we only keep the base filename (no path parts). Do not mutate characters here.
     private String sanitizeOriginalFilename(String original) {
         if (original == null) return null;
-        String base = Paths.get(original).getFileName().toString();
-        // Disallow any remaining path separators just in case
-        if (base.contains("/") || base.contains("\\\\")) {
-            return null;
-        }
-        return base;
+        return Paths.get(original).getFileName().toString();
     }
 
     private String getFileExtension(String original) {
         if (original == null) return null;
         int idx = original.lastIndexOf('.');
-        if (idx < 0 || idx == original.length() - 1) return null;
-        return original.substring(idx + 1);
+        return (idx < 0) ? null : original.substring(idx + 1);
     }
 
-    private String saveFileWithProvidedName(MultipartFile file, UUID documentId, UUID versionId, String original) throws IOException {
-        Path uploadPath = Paths.get(resolveUploadDir());
-        Files.createDirectories(uploadPath);
-        String fileName = documentId + "_" + versionId + "_" + original;
-        Path filePath = uploadPath.resolve(fileName);
-        Files.write(filePath, file.getBytes());
-        return fileName;
+    private String saveLocal(MultipartFile file, UUID docId, UUID verId, String original, String category) throws IOException {
+        Path dir = (category == null) ? Paths.get(resolveUploadDir())
+                : Paths.get(resolveUploadDir(), category);
+
+        Files.createDirectories(dir);
+
+        String fileName = docId + "_" + verId + "_" + original;
+        Files.write(dir.resolve(fileName), file.getBytes());
+
+        return (category == null) ? fileName : category + "/" + fileName;
     }
 
-    /**
-     * Calculate SHA-256 checksum of file
-     */
-    private String calculateChecksum(byte[] fileBytes) throws NoSuchAlgorithmException {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(fileBytes);
-        StringBuilder hexString = new StringBuilder();
+    private String buildStorageKey(UUID docId, UUID verId, String original, String category) {
+        return (category == null)
+                ? docId + "/" + verId + "/" + original
+                : category + "/" + docId + "/" + verId + "/" + original;
+    }
 
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) hexString.append('0');
-            hexString.append(hex);
-        }
+    private void uploadToS3(String key, MultipartFile file) throws IOException {
+        s3Client.putObject(
+                software.amazon.awssdk.services.s3.model.PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .build(),
+                software.amazon.awssdk.core.sync.RequestBody.fromBytes(file.getBytes())
+        );
+    }
 
-        return hexString.toString();
+    private void deleteFromS3(String key) {
+        s3Client.deleteObject(builder -> builder.bucket(bucket).key(key));
+    }
+
+    private String calculateChecksum(byte[] data) throws NoSuchAlgorithmException {
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        byte[] hash = md.digest(data);
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hash) sb.append(String.format("%02x", b));
+        return sb.toString();
     }
 }
