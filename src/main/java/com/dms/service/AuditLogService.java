@@ -11,22 +11,40 @@ import org.springframework.transaction.annotation.Propagation;
 
 @Service
 public class AuditLogService {
-    private AuditLogRepository auditLogRepository;
+    private final AuditLogRepository auditLogRepository;
 
     public AuditLogService(AuditLogRepository auditLogRepository) {
         this.auditLogRepository = auditLogRepository;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void LogAudit(UUID log_id, UUID user_id, UUID entity_id, String action,String ip_address,String status) {
-        AuditLog auditLog = new AuditLog(log_id, user_id, action, entity_id, LocalDateTime.now(),ip_address,status);
-        auditLogRepository.save(auditLog);
+    public void createAuditLog(String action, UUID entityId, String remoteAddr, String status) {
+        AuditLog log = new AuditLog();
+
+        // Clean the local address (Moved from controller to service)
+        if ("0:0:0:0:0:0:0:1".equals(remoteAddr)) {
+            remoteAddr = "127.0.0.1";
+        }
+
+        log.setAction(action);
+        log.setEntity_id(entityId);
+        log.setIp(remoteAddr);
+        log.setStatus(status);
+        log.setTimestamp(LocalDateTime.now());
+
+        // Use your test UUID or fetch from SecurityContext
+        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+        log.setUser_id(testUserId);
+
+        auditLogRepository.save(log);
     }
 
+    // Fetches every log in the database for the admin dashboard
     public List<AuditLog> getAllLogs(){
         return auditLogRepository.findAll();
     }
 
+    // Saves a log object directly (used by the REST API)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AuditLog saveLog(AuditLog auditLog){
         if(auditLog.getTimestamp()==null){
@@ -34,6 +52,8 @@ public class AuditLogService {
         }
         return auditLogRepository.save(auditLog);
     }
+
+    // call the custom filter in the repository
     public List<AuditLog> getFilteredLogs(UUID userId, String action, LocalDateTime fromDate, LocalDateTime toDate) {
         return auditLogRepository.findByFilters(userId, action, fromDate, toDate);
     }

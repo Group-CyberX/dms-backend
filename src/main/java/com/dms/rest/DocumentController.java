@@ -45,11 +45,12 @@ public class DocumentController {
     @GetMapping("/{id}")
     public ResponseEntity<Documents> getById(@PathVariable("id") UUID id, HttpServletRequest request) {
         Optional<Documents> doc = documentRepository.findById(id);
+        String ip = getClientIp(request); // Extract the String IP
         if (doc.isPresent()) {
-            createAuditLog("DOCUMENT_VIEWED", id, request, "SUCCESS");
+            auditLogService.createAuditLog("DOCUMENT_VIEWED", id, ip, "SUCCESS");
             return ResponseEntity.ok(doc.get());
         } else {
-            createAuditLog("DOCUMENT_VIEWED", id, request, "FAILED");
+            auditLogService.createAuditLog("DOCUMENT_VIEWED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
     }
@@ -64,7 +65,9 @@ public class DocumentController {
             doc.setCreated_at(LocalDateTime.now());
         }
         Documents saved = documentRepository.save(doc);
-        createAuditLog("DOCUMENT_CREATED", saved.getDocument_id(), request, "SUCCESS");
+        String ip = getClientIp(request); // Extract the String IP
+
+        auditLogService.createAuditLog("DOCUMENT_CREATED", saved.getDocument_id(), ip, "SUCCESS");
         return ResponseEntity.created(URI.create("/api/documents/" + saved.getDocument_id())).body(saved);
     }
 
@@ -79,6 +82,7 @@ public class DocumentController {
             @RequestParam(value = "description", required = false) String description,
             HttpServletRequest request) {
         UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+        String ip = getClientIp(request); // Extract the String IP
 
         try {
             UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
@@ -87,7 +91,7 @@ public class DocumentController {
             // We check if the service ACTUALLY succeeded before celebrating
             if (!response.isSuccess()) {
                 // It failed a validation rule (like invalid filename or tags)
-                createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
+                auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
                 //Send the failed notification
                 notificationService.sendNotification(testUserId, "Failed: " + response.getMessage());
                 // Return a 400 Bad Request so the React frontend knows it failed
@@ -95,7 +99,7 @@ public class DocumentController {
             }
 
             UUID newDocumentId = response.getDocumentId();
-            createAuditLog("DOCUMENT_UPLOAD", newDocumentId, request, "SUCCESS");
+            auditLogService.createAuditLog("DOCUMENT_UPLOAD", newDocumentId, ip, "SUCCESS");
 
 
             // Send the notification
@@ -105,7 +109,7 @@ public class DocumentController {
             return ResponseEntity.ok(response);
 
         } catch (IOException e) {
-            createAuditLog("DOCUMENT_UPLOAD", null, request, "FAILED");
+            auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
             notificationService.sendNotification(testUserId, "Error: Upload failed due to system error.");
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
                     null, null, null, "Upload failed: " + e.getMessage(), false
@@ -118,8 +122,10 @@ public class DocumentController {
     @PutMapping("/{id}")
     public ResponseEntity<Documents> update(@PathVariable("id") UUID id, @RequestBody Documents update, HttpServletRequest request) {
         Optional<Documents> existingOpt = documentRepository.findById(id);
+        String ip = getClientIp(request); // Extract the String IP
+
         if (existingOpt.isEmpty()) {
-            createAuditLog("DOCUMENT_EDITED", id, request, "FAILED");
+            auditLogService.createAuditLog("DOCUMENT_EDITED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
         Documents existing = existingOpt.get();
@@ -133,32 +139,17 @@ public class DocumentController {
             existing.setCreated_at(update.getCreated_at());
         }
         Documents saved = documentRepository.save(existing);
-        createAuditLog("DOCUMENT_EDITED", saved.getDocument_id(), request, "SUCCESS");
-        sendInternalNotification("Document "+saved.getTitle()+" was modified.");
+        auditLogService.createAuditLog("DOCUMENT_EDITED", saved.getDocument_id(), ip, "SUCCESS");
+        notificationService.sendInternalSystemNotification("Document "+saved.getTitle()+" was modified.");
         return ResponseEntity.ok(saved);
     }
 
-    // audit document delete
-//    @DeleteMapping("/{id}")
-//    public ResponseEntity<Void> delete(@PathVariable("id") UUID id, HttpServletRequest request) {
-//        Optional<Documents> doc=documentRepository.findById(id);
-//        if (!documentRepository.existsById(id)) {
-//            createAuditLog("DOCUMENT_DELETED", id, request, "FAILED");
-//            return ResponseEntity.notFound().build();
-//        }
-//
-//        String title = doc.get().getTitle();
-//        documentRepository.deleteById(id);
-//        createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
-//        //sends the notification
-//        sendInternalNotification("Document "+title+" has been deleted.");
-//        return ResponseEntity.noContent().build();
-//    }
 
     //for the testing purposes of audit and notifications
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id, HttpServletRequest request) {
         Optional<Documents> docOpt = documentRepository.findById(id);
+        String ip = getClientIp(request); // Extract the String IP
 
         if (docOpt.isPresent()) {
             Documents doc = docOpt.get();
@@ -166,13 +157,13 @@ public class DocumentController {
             doc.setIs_deleted(true);
             documentRepository.save(doc);
 
-            createAuditLog("DOCUMENT_DELETED", id, request, "SUCCESS");
+            auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "SUCCESS");
 
-            sendInternalNotification("Document '" + doc.getTitle() + "' has been deleted.");
+            notificationService.sendInternalSystemNotification("Document '" + doc.getTitle() + "' has been deleted.");
 
             return ResponseEntity.noContent().build();
         } else {
-            createAuditLog("DOCUMENT_DELETED", id, request, "FAILED");
+            auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
     }
@@ -181,43 +172,30 @@ public class DocumentController {
     @PutMapping("/{id}/approve")
     public ResponseEntity<Documents> approveDocument(@PathVariable("id") UUID id, HttpServletRequest request) {
         Optional<Documents> docOpt = documentRepository.findById(id);
+        String ip = getClientIp(request); // Extract the String IP
+
         if (docOpt.isEmpty()) {
-            createAuditLog("DOCUMENT_APPROVED", id, request, "FAILED");
+            auditLogService.createAuditLog("DOCUMENT_APPROVED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
 
         Documents doc = docOpt.get();
 
         documentRepository.save(doc);
-        createAuditLog("DOCUMENT_APPROVED", id, request, "SUCCESS");
+        auditLogService.createAuditLog("DOCUMENT_APPROVED", id, ip, "SUCCESS");
 
         // send Notification
-        sendInternalNotification("Document " + doc.getTitle() + " has been approved!");
+        notificationService.sendInternalSystemNotification("Document " + doc.getTitle() + " has been approved!");
 
         return ResponseEntity.ok(doc);
     }
 
     // helper method
-    private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
-        AuditLog log = new AuditLog();
-        //to get the real IP address
+    private String getClientIp(HttpServletRequest request) {
         String remoteAddr = request.getHeader("X-Forwarded-For");
         if (remoteAddr == null || remoteAddr.isEmpty()) {
             remoteAddr = request.getRemoteAddr();
         }
-        if (remoteAddr.equals("0:0:0:0:0:0:0:1")) {
-            remoteAddr = "127.0.0.1 (Local)";
-        }
-        log.setAction(action);
-        log.setEntity_id(entityId);
-        log.setIp(request.getRemoteAddr());
-        log.setStatus(status);
-        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
-        log.setUser_id(testUserId);
-        auditLogService.saveLog(log);
-    }
-    private void sendInternalNotification(String message) {
-        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
-        notificationService.sendNotification(testUserId, message);
+        return remoteAddr;
     }
 }

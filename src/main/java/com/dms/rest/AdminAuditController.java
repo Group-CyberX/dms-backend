@@ -18,12 +18,13 @@ public class AdminAuditController {
         this.auditLogService = auditLogService;
     }
 
+    //Returns the full list of all activities in the system
     @GetMapping("/logs")
     public List<AuditLog> getAllLogs(){
         return auditLogService.getAllLogs();
     }
 
-    // NEW: The Filter Endpoint
+    // The Filter Endpoint
     @GetMapping("/logs/filter")
     public List<AuditLog> getFilteredLogs(
             @RequestParam(required = false) String userId,
@@ -47,6 +48,7 @@ public class AdminAuditController {
         return auditLogService.getFilteredLogs(userUuid, actionParam, start, end);
     }
 
+    //Allows other parts of the system to programmatically record a new event
     @PostMapping("/logs")
     public AuditLog newLog(@RequestBody AuditLog auditLog, HttpServletRequest request){
         auditLog.setIp(request.getRemoteAddr());
@@ -55,4 +57,10 @@ public class AdminAuditController {
         }
         return auditLogService.saveLog(auditLog);
     }
+
+//    // Provides a list of all system users to populate the UI filter dropdown
+//    @GetMapping("/users")
+//    public List<User> getAllUsers() {
+//        return userService.getAllUsers();
+//    }
 }

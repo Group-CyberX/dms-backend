@@ -17,6 +17,9 @@ public class Notification {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Column(name = "title", nullable = false)
+    private String title;
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
 
@@ -27,6 +30,10 @@ public class Notification {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "is_deleted", nullable = false)
+    @JsonProperty("isDeleted")
+    private boolean isDeleted = false;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
@@ -36,10 +43,12 @@ public class Notification {
 
     public Notification() {}
 
-    public Notification(UUID userId, String message) {
+    public Notification(UUID userId, String message, String title) {
         this.userId = userId;
         this.message = message;
+        this.title = title;
         this.isRead = false;
+        this.isDeleted = false;
     }
 
     // --- Updated Getters and Setters ---
@@ -62,4 +71,10 @@ public class Notification {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
+
+    public boolean isIsDeleted() { return isDeleted; }
+    public void setIsDeleted(boolean isDeleted) { this.isDeleted = isDeleted; }
 }

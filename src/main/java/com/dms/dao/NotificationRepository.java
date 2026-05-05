@@ -12,13 +12,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
-
-    List<Notification> findByUserIdOrderByCreatedAtDesc(UUID userId);
-
+    //Fins notifications which are not yet deleted
+    List<Notification> findByUserIdAndIsDeletedFalseOrderByCreatedAtDesc(UUID userId);
+    //Find notifications which are unread
     List<Notification> findByUserIdAndIsReadFalseOrderByCreatedAtDesc(UUID userId);
 
     @Modifying
     @Transactional
-    @Query("UPDATE Notification n SET n.isRead = true WHERE n.userId = :userId AND n.isRead = false")
+    @Query("UPDATE Notification n SET n.isRead = true WHERE n.userId = :userId AND n.isRead = false AND n.isDeleted = false")
     void markAllAsRead(@Param("userId") UUID userId);
+
+    // Soft deleting notifications
+    @Modifying
+    @Transactional
+    @Query("UPDATE Notification n SET n.isDeleted = true WHERE n.notificationId = :id")
+    void softDeleteById(@Param("id") UUID id);
 }
