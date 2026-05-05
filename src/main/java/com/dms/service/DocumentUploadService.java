@@ -111,12 +111,13 @@ public class DocumentUploadService {
                 return new DocumentUploadResponse(null, null, null, fileName, "Invalid category", false);
             }
 
+            final String finalCategory = categoryNormalized;
             Folders folder = folderRepository.findByNameIgnoreCase(categoryNormalized)
                     .orElseGet(() -> {
                         Folders f = new Folders();
                         f.setFolder_id(UUID.randomUUID());
-                        f.setName(categoryNormalized);
-                        f.setPath(categoryNormalized);
+                        f.setName(finalCategory);
+                        f.setPath(finalCategory);
                         return folderRepository.save(f);
                     });
 

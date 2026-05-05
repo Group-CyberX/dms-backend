@@ -47,6 +47,9 @@ public class SecurityConfig {
                         // Comments public
                         .requestMatchers("/api/comments/**").permitAll()
 
+                        // Audit logs accessible to USER and SYSTEM_ADMIN
+                        .requestMatchers("/admin/logs").hasAnyRole("USER", "SYSTEM_ADMIN")
+
                         // Roles
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/user/**").hasAnyRole("USER", "SYSTEM_ADMIN")
