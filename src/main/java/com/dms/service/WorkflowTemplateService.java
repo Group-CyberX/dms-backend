@@ -153,6 +153,11 @@ public class WorkflowTemplateService {
         return stepRepo.findByTemplateIdOrderByStepOrderAsc(templateId);
     }
 
+    // Simple getter for template by id used by other services
+    public WorkflowTemplate getTemplateById(Long templateId) {
+        return templateRepo.findById(templateId).orElse(null);
+    }
+
     //Convert a manually created workflow into a reusable template
     // manual workflow -> save as new template
     public WorkflowTemplate createTemplateFromManualWorkflow(CreateWorkflowRequest request) {
@@ -177,7 +182,11 @@ public class WorkflowTemplateService {
                         : request.getDocumentType()
         );
         template.setNumberOfSteps(request.getApprovers().size());
-        template.setWorkflowType(WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL);
+        template.setWorkflowType(
+            request.getWorkflowType() == null || request.getWorkflowType().isBlank()
+                ? WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL
+                : request.getWorkflowType()
+        );
         template.setCreatedBy(request.getCreatedByUserId());
         // Manual workflows saved as templates are not system templates
         template.setSystemTemplate(false);

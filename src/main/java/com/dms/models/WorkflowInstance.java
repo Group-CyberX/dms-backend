@@ -23,9 +23,15 @@ public class WorkflowInstance {
 
     private String workflowName;
 
+    private String description;
+
+    private String documentType;
+
     private String priority;
 
     private LocalDate dueDate;
+
+    private String workflowType;
 
     private String status;
 
