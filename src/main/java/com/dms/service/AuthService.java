@@ -22,11 +22,11 @@ import java.util.UUID;
 @Service
 public class AuthService {
 
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final UserRepository userRepository;    // Repository for user database operations
+    private final RoleRepository roleRepository;    // Repository for role management (RBAC)
+    private final PasswordEncoder passwordEncoder;  // Used for hashing passwords securely
+    private final JwtUtil jwtUtil;                  // Utility class for generating and validating JWT tokens
+    private final RefreshTokenRepository refreshTokenRepository;    // Repository to store and manage refresh tokens
 
     public AuthService(UserRepository userRepository,
                        RoleRepository roleRepository,
@@ -103,7 +103,7 @@ public class AuthService {
                 permissions
         );
     }
-
+//Forget password
     public void forgotPassword(String email) {
 
         User user = userRepository.findByEmail(email).orElse(null);
@@ -123,7 +123,7 @@ public class AuthService {
             System.out.println("Reset Link: " + resetLink);
         }
     }
-
+//reset password
     public void resetPassword(String token, String newPassword) {
 
         User user = userRepository.findByResetToken(token).orElse(null);
@@ -145,6 +145,8 @@ public class AuthService {
 
         userRepository.save(user);
     }
+
+    //Refresh token
     private String createRefreshToken(User user) {
 
         String token = UUID.randomUUID().toString();
@@ -200,12 +202,13 @@ public class AuthService {
                 permissions
         );
     }
-
+//refresh token revoke
     public void logout(String requestToken) {
 
         RefreshToken token = refreshTokenRepository.findByToken(requestToken)
                 .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
 
+        // Revoke the refresh token to invalidate a session
         token.setRevoked(true);
 
         refreshTokenRepository.save(token);

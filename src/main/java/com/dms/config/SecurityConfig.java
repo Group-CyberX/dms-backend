@@ -21,6 +21,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    // Custom JWT filter to validate tokens in incoming requests
     private final JwtFilter jwtFilter;
 
     public SecurityConfig(JwtFilter jwtFilter) {
@@ -31,8 +32,13 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
         http
+                // Enable CORS for frontend-backend communication
                 .cors(cors -> {})
+
+                // Disable CSRF because we use stateless JWT authentication
                 .csrf(AbstractHttpConfigurer::disable)
+
+                // Define authorization rules for endpoints
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
@@ -41,11 +47,13 @@ public class SecurityConfig {
                 )
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
+
+                // Add JWT filter before Spring's authentication filter
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-
+    // Password encoder using BCrypt hashing
     @Bean
     public PasswordEncoder passwordEncoder(){
         return new BCryptPasswordEncoder();
