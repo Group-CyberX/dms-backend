@@ -27,7 +27,7 @@ public class DocumentVersions {
     @Column(name = "checksum")
     private String checksum;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "ocr_content", columnDefinition = "TEXT")
     private String ocr_content;
 
     @Column(name = "created_at")

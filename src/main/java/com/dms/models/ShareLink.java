@@ -26,13 +26,16 @@ public class ShareLink {
     @Column(name = "token", nullable = false, unique = true)
     private String token;
 
+    // Expiry date of link (null = no expiry)
     @Column(name = "expiry_date", nullable = true)
     private LocalDateTime expiryDate;
 
+    // Access level stored as ENUM string
     @Enumerated(EnumType.STRING)
     @Column(name = "access_level", nullable = false)
     private AccessLevel accessLevel; 
 
+    // Hashed password (if password protection enabled)
     @Column(name = "password_hash", nullable = true)
     private String passwordHash;
 

@@ -8,6 +8,7 @@ import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
 import com.dms.models.DocumentVersions;
 import com.dms.models.Folders;
+import com.dms.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -189,7 +190,7 @@ public class DocumentUploadService {
             Documents document = new Documents();
             document.setDocument_id(documentId);
             document.setTitle(title);
-            document.setOwner_id(userId);
+            document.setOwner_id(com.dms.security.SecurityUtils.currentUserId());
             document.setFolder_id(effectiveFolderId);
             document.setCurrent_version_id(versionId);
             document.setCreated_at(LocalDateTime.now());
@@ -279,7 +280,7 @@ public class DocumentUploadService {
         return true;
     }
 
-    // Ensure we only keep the base filename (no path parts). Do not mutate characters here.
+    // Ensure only keep the base filename (no path parts). Do not mutate characters here.
     private String sanitizeOriginalFilename(String original) {
         if (original == null) return null;
         String base = Paths.get(original).getFileName().toString();
@@ -318,14 +319,16 @@ public class DocumentUploadService {
     }
 
     private String buildStorageKey(UUID documentId, UUID versionId, String original) {
-        return documentId + "/" + versionId + "/" + original;
+        UUID userId = SecurityUtils.currentUserId();
+        return userId + "/" + documentId + "/" + versionId + "/" + original;
     }
 
     private String buildStorageKey(UUID documentId, UUID versionId, String original, String category) {
+        UUID userId = SecurityUtils.currentUserId();
         if (category == null || category.isBlank()) {
             return buildStorageKey(documentId, versionId, original);
         }
-        return category + "/" + documentId + "/" + versionId + "/" + original;
+        return userId + "/" + category + "/" + documentId + "/" + versionId + "/" + original;
     }
 
     private void uploadToS3(String key, MultipartFile file) throws IOException {
@@ -355,9 +358,8 @@ public class DocumentUploadService {
         }
     }
 
-    /**
-     * Calculate SHA-256 checksum of file
-     */
+    //Calculate SHA-256 checksum of file
+    
     private String calculateChecksum(byte[] fileBytes) throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         byte[] hash = digest.digest(fileBytes);
