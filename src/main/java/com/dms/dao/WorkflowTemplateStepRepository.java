@@ -6,6 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 public interface WorkflowTemplateStepRepository extends JpaRepository<WorkflowTemplateStep, Long> {
-
-    List<WorkflowTemplateStep> findByTemplateId(Long templateId);
+    // Fetch steps of a template in correct execution order (ascending stepOrder)
+    List<WorkflowTemplateStep> findByTemplateIdOrderByStepOrderAsc(Long templateId);
 }

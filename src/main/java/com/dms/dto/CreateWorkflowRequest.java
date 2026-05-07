@@ -8,14 +8,18 @@ import java.util.List;
 public class CreateWorkflowRequest {
 
     private String documentId;
+    private String documentType;
 
-    private Long templateId;
-
+    // if provided, use this template to create workflow; if null → manual workflow creation
+    private Long templateId; 
     private String workflowName;
-
+    private String description;
     private String priority;
-
     private LocalDate dueDate;
-
     private List<String> approvers;
+    private String createdByUserId;
+    private boolean saveAsTemplate;
+
+    // Name of the new template (if saveAsTemplate = true)
+    private String templateName; 
 }
