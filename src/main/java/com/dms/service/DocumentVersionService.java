@@ -2,7 +2,9 @@ package com.dms.service;
 
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.DocumentVersionRepository;
+import com.dms.dao.DocumentMetadataRepository;
 import com.dms.models.Documents;
+import com.dms.models.DocumentMetadata;
 import com.dms.models.DocumentVersions;
 import com.dms.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +35,9 @@ public class DocumentVersionService {
 
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentRepository documentRepository;
+    private final MetadataExtractorService metadataExtractorService;
+    private final DocumentMetadataRepository documentMetadataRepository;
+    private final ProcessingJobService processingJobService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -72,7 +77,12 @@ public class DocumentVersionService {
     public DocumentVersionService(DocumentVersionRepository documentVersionRepository,
                                   DocumentRepository documentRepository,
                                   software.amazon.awssdk.services.s3.S3Client s3Client,
-                                  S3Presigner s3Presigner) {
+                                  MetadataExtractorService metadataExtractorService,
+                                  DocumentMetadataRepository documentMetadataRepository,
+                                  ProcessingJobService processingJobService, S3Presigner s3Presigner) {
+        this.metadataExtractorService = metadataExtractorService;
+        this.documentMetadataRepository = documentMetadataRepository;
+        this.processingJobService = processingJobService;                    
         this.documentVersionRepository = documentVersionRepository;
         this.documentRepository = documentRepository;
         this.s3Client = s3Client;
@@ -132,7 +142,6 @@ public class DocumentVersionService {
         try {
             String checksum = calculateChecksum(file.getBytes());
 
-            // Extract category prefix from existing version to maintain same folder structure
             String categoryPrefix = extractCategoryPrefix(documentId);
 
             UUID versionId = UUID.randomUUID();
@@ -152,11 +161,20 @@ public class DocumentVersionService {
             version.setVersion_number(newVersionNumber);
             version.setS3_bucket_key(savedFileName);
             version.setChecksum(checksum);
-            version.setOcr_content("");
+            version.setOcr_content(null); // Will be populated by async job
             version.setCreated_at(LocalDateTime.now());
 
-            documentVersionRepository.save(version);
-
+            documentVersionRepository.saveAndFlush(version);
+            
+            // Queue OCR Job
+            com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
+            processingJobService.triggerOcrJobSafely(job.getJobId());
+            
+            // Save Automatic Metadata (Content-Type and File Size)
+            if (file.getContentType() != null) {
+                documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
+            }
+            documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", String.valueOf(file.getSize()) + " bytes"));
             // update current version pointer
             document.setCurrent_version_id(versionId);
             documentRepository.save(document);

@@ -11,6 +11,7 @@ import java.util.UUID;
 
 @Repository
 public interface TagRepository extends JpaRepository<Tag, UUID> {
+    // Find a tag by name ignoring letter case
     @Query("SELECT t FROM Tag t WHERE LOWER(t.tag_name) = LOWER(:tagName)")
     Optional<Tag> findByTagNameIgnoreCase(@Param("tagName") String tagName);
 }

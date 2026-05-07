@@ -3,9 +3,11 @@ package com.dms.service;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.DocumentVersionRepository;
 import com.dms.dao.FolderRepository;
+import com.dms.dao.DocumentMetadataRepository;
 import com.dms.dto.DocumentUploadResponse;
 import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
+import com.dms.models.DocumentMetadata;
 import com.dms.models.DocumentVersions;
 import com.dms.models.Folders;
 import com.dms.security.SecurityUtils;
@@ -31,7 +33,10 @@ public class DocumentUploadService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final FolderRepository folderRepository;
+    private final DocumentMetadataRepository documentMetadataRepository;
+    private final MetadataExtractorService metadataExtractorService;
     private final TagService tagService;
+    private final ProcessingJobService processingJobService; // Added job service
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -68,12 +73,15 @@ public class DocumentUploadService {
             "invoice", "contract", "report", "proposal", "other"
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService) {
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.folderRepository = folderRepository;
         this.s3Client = s3Client;
         this.tagService = tagService;
+        this.documentMetadataRepository = documentMetadataRepository;
+        this.metadataExtractorService = metadataExtractorService;
+        this.processingJobService = processingJobService;
     }
 
     @Transactional
@@ -113,7 +121,7 @@ public class DocumentUploadService {
         // Validate original filename and extension
         String original = sanitizeOriginalFilename(file.getOriginalFilename());
         if (original == null || !SAFE_FILENAME.matcher(original).matches()) {
-            return new DocumentUploadResponse(null, null, null, fileName, "Invalid file name. Use only letters, numbers, dash, underscore and a supported extension (pdf, docx, xlsx, png, jpg, jpeg)", false);
+            return new DocumentUploadResponse(null, null, null, fileName, "Invalid file name. Extension must be pdf, docx, xlsx, png, jpg, jpeg.", false);
         }
         String ext = getFileExtension(original);
         if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
@@ -198,22 +206,42 @@ public class DocumentUploadService {
             document.setIs_locked(false);
             document.setIs_deleted(false);
 
-            documentRepository.save(document);
+            document = documentRepository.save(document);
 
             // Save tags
             tagService.saveTags(documentId, request.getTags());
 
-            // Create DocumentVersion record
+            // Create DocumentVersion record WITHOUT extracted text initially
             DocumentVersions version = new DocumentVersions();
             version.setVersion_id(versionId);
             version.setDocument_id(documentId);
             version.setVersion_number("1.0");
             version.setS3_bucket_key(savedFileName);
             version.setChecksum(checksum);
-            version.setOcr_content(""); // OCR content can be populated later
+            version.setOcr_content(null); // Text will be applied async
             version.setCreated_at(LocalDateTime.now());
 
-            documentVersionRepository.save(version);
+            documentVersionRepository.saveAndFlush(version);
+
+            // Queue the Processing Job!
+            com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
+            processingJobService.triggerOcrJobSafely(job.getJobId());
+
+            // Save Automatic Metadata (Content-Type and File Size)
+            if (file.getContentType() != null) {
+                documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
+            }
+            documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", String.valueOf(file.getSize()) + " bytes"));
+            
+            // Save Document Type (Category) to Metadata exactly matching the UI search key
+            if (categoryNormalized != null && !categoryNormalized.isBlank()) {
+                documentMetadataRepository.save(new DocumentMetadata(document, "documentType", categoryNormalized));
+            }
+
+            // We do a fast digital signature check natively on the file without OCR
+            boolean hasSignature = metadataExtractorService.hasDigitalSignature(file);
+            String sigStatusValue = hasSignature ? "signed" : "unsigned";
+            documentMetadataRepository.save(new DocumentMetadata(document, "signatureStatus", sigStatusValue));
 
             return new DocumentUploadResponse(
                     documentId,
@@ -232,14 +260,16 @@ public class DocumentUploadService {
             }
             return new DocumentUploadResponse(null, null, null, fileName, "Error calculating file checksum: " + e.getMessage(), false);
         } catch (RuntimeException e) {
+            // Log the stack trace so we can debug database/constraint errors
+            e.printStackTrace();
+            
             // On any unchecked exception, attempt to remove file to keep FS consistent with rolled-back DB
             if (savedFileName != null) {
                 try {
                     if (storedInS3) deleteFromS3(savedFileName); else Files.deleteIfExists(Paths.get(resolveUploadDir()).resolve(savedFileName));
                 } catch (IOException ignore) {}
             }
-            String errorMsg = "Upload failed: " + (e.getMessage() != null ? e.getMessage() : "Unknown error");
-            return new DocumentUploadResponse(null, null, null, fileName, errorMsg, false);
+            throw e; 
         }
     }
 
