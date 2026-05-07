@@ -34,6 +34,9 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select d from Documents d where d.document_id = :id and d.is_deleted = false")
     Optional<Documents> findActiveById(@Param("id") UUID id);
 
+    @Query("select d from Documents d where d.owner_id = :ownerId and d.is_deleted = false")
+    List<Documents> findByOwnerIdAndNotDeleted(@Param("ownerId") UUID ownerId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("update Documents d set d.is_deleted = true, d.deleted_at = CURRENT_TIMESTAMP where d.document_id = :id")

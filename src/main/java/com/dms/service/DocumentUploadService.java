@@ -77,7 +77,7 @@ public class DocumentUploadService {
     }
 
     @Transactional
-    public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request) throws IOException {
+    public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request, UUID userId) throws IOException {
         String fileName = file != null ? file.getOriginalFilename() : "unknown";
         
         if (file == null || file.isEmpty()) {

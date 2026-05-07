@@ -9,6 +9,7 @@ import com.dms.models.Documents;
 import com.dms.models.User;
 import com.dms.service.DocumentUploadService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -32,47 +33,58 @@ public class DocumentController {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.userRepository = userRepository;
+@GetMapping
+public List<DocumentResponse> getAll(Authentication auth) {
+
+    if (auth == null || !auth.isAuthenticated()) {
+        throw new RuntimeException("User not authenticated");
     }
 
-    
-     //Convert Documents entity to DocumentResponse with owner name
-     
-    private DocumentResponse convertToDTO(Documents doc) {
-        String ownerName = "Unknown";
-        
-        if (doc.getOwner_id() != null) {
-            if (doc.getOwner_id().toString().equals("00000000-0000-0000-0000-000000000000")) {
-                ownerName = "System";
-            } else {
-                Optional<User> owner = userRepository.findById(doc.getOwner_id());
-                if (owner.isPresent()) {
-                    ownerName = owner.get().getUsername();
-                }
+    return documentRepository.findAllActiveByOwner(
+                    com.dms.security.SecurityUtils.currentUserId()
+            )
+            .stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+}
+
+//Convert Documents entity to DocumentResponse with owner name
+
+private DocumentResponse convertToDTO(Documents doc) {
+
+    String ownerName = "Unknown";
+
+    if (doc.getOwner_id() != null) {
+
+        if (doc.getOwner_id().toString()
+                .equals("00000000-0000-0000-0000-000000000000")) {
+
+            ownerName = "System";
+
+        } else {
+
+            Optional<User> owner = userRepository.findById(doc.getOwner_id());
+
+            if (owner.isPresent()) {
+                ownerName = owner.get().getUsername();
             }
         }
-        
-        return new DocumentResponse(
-                doc.getDocument_id(),
-                doc.getTitle(),
-                doc.getOwner_id(),
-                ownerName,
-                doc.getFolder_id(),
-                doc.getCurrent_version_id(),
-                doc.getCreated_at(),
-                doc.getDeleted_at(),
-                doc.getFile_size(),
-                doc.isIs_locked(),
-                doc.isIs_deleted()
-        );
     }
 
-    @GetMapping
-    public List<DocumentResponse> getAll() {
-        return documentRepository.findAllActiveByOwner(com.dms.security.SecurityUtils.currentUserId())
-                .stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-    }
+    return new DocumentResponse(
+            doc.getDocument_id(),
+            doc.getTitle(),
+            doc.getOwner_id(),
+            ownerName,
+            doc.getFolder_id(),
+            doc.getCurrent_version_id(),
+            doc.getCreated_at(),
+            doc.getDeleted_at(),
+            doc.getFile_size(),
+            doc.isIs_locked(),
+            doc.isIs_deleted()
+    );
+}
 
     @GetMapping("/{id}")
     public ResponseEntity<DocumentResponse> getById(@PathVariable("id") UUID id) {
@@ -82,12 +94,22 @@ public class DocumentController {
     }
 
     @GetMapping("/trash")
-    public List<DocumentResponse> getDeleted() {
-        return documentRepository.findAllDeletedByOwner(com.dms.security.SecurityUtils.currentUserId())
-                .stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+public List<DocumentResponse> getDeleted(Authentication auth) {
+
+    if (auth == null || !auth.isAuthenticated()) {
+        throw new ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "User not authenticated"
+        );
     }
+
+    return documentRepository.findAllDeletedByOwner(
+                    com.dms.security.SecurityUtils.currentUserId()
+            )
+            .stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+}
 
     @PostMapping
     public ResponseEntity<DocumentResponse> create(@RequestBody Documents doc) {
@@ -112,10 +134,22 @@ public class DocumentController {
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "tags", required = false) String tags,
-            @RequestParam(value = "description", required = false) String description) {
+            @RequestParam(value = "description", required = false) String description,
+            Authentication auth) {
         try {
+            if (auth == null || !auth.isAuthenticated()) {
+                DocumentUploadResponse errorResponse = new DocumentUploadResponse(
+                        null, null, null, file.getOriginalFilename(), "User not authenticated", false
+                );
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            String email = auth.getName();
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            
             UploadDocumentRequest request = new UploadDocumentRequest(title, folderId, category, tags, description);
-            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request);
+            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request, user.getUserId());
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
