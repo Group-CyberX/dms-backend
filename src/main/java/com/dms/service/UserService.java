@@ -1,5 +1,6 @@
 package com.dms.service;
 
+import com.dms.dto.ApproverOptionDTO;
 import com.dms.dao.RoleRepository;
 import com.dms.dao.UserRepository;
 import com.dms.models.Role;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
@@ -24,6 +26,29 @@ public class UserService {
     public List<User> getAllUsers(){
         return userRepository.findAll();
     }
+
+    public List<ApproverOptionDTO> getApproverOptions() {
+        return userRepository.findAll().stream()
+                .filter(user -> "ACTIVE".equalsIgnoreCase(user.getStatus()))
+                .map(user -> new ApproverOptionDTO(
+                        user.getUserId(),
+                        user.getUsername(),
+                        user.getRole() != null ? user.getRole().getName() : ""
+                ))
+                .collect(Collectors.toList());
+    }
+
+    public ApproverOptionDTO getCurrentUserSummary(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return new ApproverOptionDTO(
+                user.getUserId(),
+                user.getUsername(),
+                user.getRole() != null ? user.getRole().getName() : ""
+        );
+    }
+
     public User createUser(String username,String email,String password,String roleName){
         roleName = roleName.toUpperCase();
         if (userRepository.findByEmail(email).isPresent()) {

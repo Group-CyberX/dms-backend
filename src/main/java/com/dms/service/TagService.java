@@ -23,9 +23,8 @@ public class TagService {
         this.documentTagRepository = documentTagRepository;
     }
 
-    /**
-     * Get or create a tag by name
-     */
+    //Get or create a tag by name
+     
     public Tag getOrCreateTag(String tagName) {
         Optional<Tag> existing = tagRepository.findByTagNameIgnoreCase(tagName.trim());
         if (existing.isPresent()) {
@@ -36,9 +35,8 @@ public class TagService {
         return tagRepository.save(newTag);
     }
 
-    /**
-     * Save tags for a document
-     */
+    //Save tags for a document
+     
     @Transactional
     public void saveTags(UUID documentId, String tagsString) {
         if (tagsString == null || tagsString.isBlank()) {
@@ -66,9 +64,8 @@ public class TagService {
         }
     }
 
-    /**
-     * Get all tags for a document
-     */
+    //Get all tags for a document
+     
     public List<Tag> getTagsForDocument(UUID documentId) {
         List<DocumentTag> documentTags = documentTagRepository.findByDocumentId(documentId);
         List<Tag> tags = new ArrayList<>();
@@ -81,9 +78,8 @@ public class TagService {
         return tags;
     }
 
-    /**
-     * Delete all tags for a document
-     */
+    //Delete all tags for a document
+     
     @Transactional
     public void deleteTagsForDocument(UUID documentId) {
         documentTagRepository.deleteByDocumentId(documentId);

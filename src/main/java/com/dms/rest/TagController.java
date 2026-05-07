@@ -20,9 +20,7 @@ public class TagController {
         this.tagService = tagService;
     }
 
-    /**
-     * Get all tags for a document
-     */
+    //Get all tags for a document 
     @GetMapping("/document/{documentId}")
     public ResponseEntity<List<TagDTO>> getTagsForDocument(@PathVariable("documentId") UUID documentId) {
         List<Tag> tags = tagService.getTagsForDocument(documentId);
@@ -32,9 +30,7 @@ public class TagController {
         return ResponseEntity.ok(tagDTOs);
     }
 
-    /**
-     * Add a new tag to a document
-     */
+    //Add a new tag to a document
     @PostMapping("/document/{documentId}")
     public ResponseEntity<TagDTO> addTagToDocument(
             @PathVariable("documentId") UUID documentId,

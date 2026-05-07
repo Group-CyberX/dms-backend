@@ -20,6 +20,7 @@ public class CommentController {
     private final CommentService service;
     private final UserRepository userRepository;
 
+    // Add new comment for shared document
     @PostMapping("/{token}")
     public Comment add(
             @PathVariable String token,
@@ -29,6 +30,7 @@ public class CommentController {
 
         UUID userId = null;
 
+        // Get user ID if authenticated
         if (auth != null && auth.isAuthenticated()) {
             String email = auth.getName();
 
@@ -38,6 +40,7 @@ public class CommentController {
             userId = user.getUserId();
         }
 
+        // Add comment with optional user ID (null for anonymous)
         return service.addComment(
                 token,
                 userId,
@@ -45,11 +48,13 @@ public class CommentController {
         );
     }
 
+    // Get all comments for a share link
     @GetMapping("/{token}")
     public List<Comment> get(@PathVariable String token) {
         return service.getComments(token);
     }
 
+    // Edit existing comment (only owner allowed)
     @PutMapping("/{commentId}")
     public Comment edit(
             @PathVariable UUID commentId,
@@ -57,6 +62,7 @@ public class CommentController {
             Authentication auth
     ) {
 
+        // Ensure user is authenticated
         if (auth == null || !auth.isAuthenticated()) {
             throw new RuntimeException("User not authenticated");
         }
@@ -73,6 +79,7 @@ public class CommentController {
         );
     }
 
+    // Delete comment (soft delete, only owner allowed)
     @DeleteMapping("/{commentId}")
     public String delete(
             @PathVariable UUID commentId,

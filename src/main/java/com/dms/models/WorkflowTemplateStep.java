@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@Table(name = "workflow_template_step")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -15,8 +16,9 @@ public class WorkflowTemplateStep {
     private Long id;
 
     private Long templateId;
-
     private int stepOrder;
 
+    private String approverUserId;
+    private String approverName;
     private String approverRole;
 }
