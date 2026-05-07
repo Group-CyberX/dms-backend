@@ -34,6 +34,9 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select d from Documents d where d.document_id = :id and d.is_deleted = false")
     Optional<Documents> findActiveById(@Param("id") UUID id);
 
+    @Query("select d from Documents d where d.owner_id = :ownerId and d.is_deleted = false")
+    List<Documents> findByOwnerIdAndNotDeleted(@Param("ownerId") UUID ownerId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("update Documents d set d.is_deleted = true where d.document_id = :id")
@@ -46,6 +49,9 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
 
     @Query(value = "SELECT * FROM \"Document\" WHERE is_deleted = true", nativeQuery = true)
     List<Documents> findAllDeleted();
+
+    @Query("select d from Documents d where d.owner_id = :ownerId and d.is_deleted = true")
+    List<Documents> findDeletedByOwnerId(@Param("ownerId") UUID ownerId);
 
     // Search by tags - using native SQL
     @Query(value = """

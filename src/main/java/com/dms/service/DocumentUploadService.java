@@ -76,7 +76,7 @@ public class DocumentUploadService {
     }
 
     @Transactional
-    public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request) throws IOException {
+    public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request, UUID userId) throws IOException {
         String fileName = file != null ? file.getOriginalFilename() : "unknown";
         
         if (file == null || file.isEmpty()) {
@@ -189,10 +189,11 @@ public class DocumentUploadService {
             Documents document = new Documents();
             document.setDocument_id(documentId);
             document.setTitle(title);
-            document.setOwner_id(UUID.fromString("00000000-0000-0000-0000-000000000000")); // TODO: Get from current user
+            document.setOwner_id(userId);
             document.setFolder_id(effectiveFolderId);
             document.setCurrent_version_id(versionId);
             document.setCreated_at(LocalDateTime.now());
+            document.setFile_size(file.getSize());
             document.setIs_locked(false);
             document.setIs_deleted(false);
 

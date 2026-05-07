@@ -1,11 +1,14 @@
 package com.dms.rest;
 
 import com.dms.dao.DocumentRepository;
+import com.dms.dao.UserRepository;
 import com.dms.dto.DocumentUploadResponse;
 import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
+import com.dms.models.User;
 import com.dms.service.DocumentUploadService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -22,15 +25,25 @@ public class DocumentController {
 
     private final DocumentRepository documentRepository;
     private final DocumentUploadService documentUploadService;
+    private final UserRepository userRepository;
 
-    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService) {
+    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, UserRepository userRepository) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
+        this.userRepository = userRepository;
     }
 
     @GetMapping
-    public List<Documents> getAll() {
-        return documentRepository.findAllActive();
+    public List<Documents> getAll(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new RuntimeException("User not authenticated");
+        }
+        
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        return documentRepository.findByOwnerIdAndNotDeleted(user.getUserId());
     }
 
     @GetMapping("/{id}")
@@ -41,8 +54,16 @@ public class DocumentController {
     }
 
     @GetMapping("/trash")
-    public List<Documents> getDeleted() {
-        return documentRepository.findAllDeleted();
+    public List<Documents> getDeleted(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new RuntimeException("User not authenticated");
+        }
+        
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        return documentRepository.findDeletedByOwnerId(user.getUserId());
     }
 
     @PostMapping
@@ -66,10 +87,22 @@ public class DocumentController {
             @RequestParam(value = "folderId", required = false) UUID folderId,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "tags", required = false) String tags,
-            @RequestParam(value = "description", required = false) String description) {
+            @RequestParam(value = "description", required = false) String description,
+            Authentication auth) {
         try {
+            if (auth == null || !auth.isAuthenticated()) {
+                DocumentUploadResponse errorResponse = new DocumentUploadResponse(
+                        null, null, null, file.getOriginalFilename(), "User not authenticated", false
+                );
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+            
+            String email = auth.getName();
+            User user = userRepository.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+            
             UploadDocumentRequest request = new UploadDocumentRequest(title, folderId, category, tags, description);
-            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request);
+            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request, user.getUserId());
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
