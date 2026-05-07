@@ -34,8 +34,10 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints - no authentication required
                         .requestMatchers("/auth/**").permitAll()
 
+                        .requestMatchers("/api/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated() 
                         .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll() 
                         .requestMatchers(HttpMethod.DELETE, "/api/share-links/**").authenticated() 
@@ -45,7 +47,6 @@ public class SecurityConfig {
 
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/user/").hasAnyRole("USER", "SYSTEM_ADMIN")
-
                         .anyRequest().authenticated()
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)
