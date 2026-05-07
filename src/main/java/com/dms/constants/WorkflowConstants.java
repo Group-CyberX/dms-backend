@@ -12,6 +12,7 @@ public final class WorkflowConstants {
 
     // task statuses
     public static final String TASK_PENDING = "PENDING";
+    public static final String TASK_ACTIVE = "ACTIVE";
     public static final String TASK_APPROVED = "APPROVED";
     public static final String TASK_REJECTED = "REJECTED";
 

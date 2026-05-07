@@ -78,8 +78,28 @@ public class WorkflowService {
         instance.setDocumentId(request.getDocumentId());
         instance.setTemplateId(finalTemplateId);
         instance.setWorkflowName(request.getWorkflowName());
+        if (finalTemplateId != null) {
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            instance.setDescription(template != null ? template.getDescription() : request.getDescription());
+            instance.setDocumentType(template != null ? template.getDocumentType() : request.getDocumentType());
+        } else {
+            instance.setDescription(request.getDescription());
+            instance.setDocumentType(request.getDocumentType());
+        }
         instance.setPriority(request.getPriority());
         instance.setDueDate(request.getDueDate());
+        // Persist workflow type: prefer template type for template-based workflows,
+        // otherwise use the value from the request (manual workflows)
+        if (finalTemplateId != null) {
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            instance.setWorkflowType(template != null && template.getWorkflowType() != null
+                ? template.getWorkflowType()
+                : WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL);
+        } else {
+            instance.setWorkflowType(request.getWorkflowType() == null || request.getWorkflowType().isBlank()
+                ? WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL
+                : request.getWorkflowType());
+        }
 
         // Default status
         instance.setStatus(WorkflowConstants.WORKFLOW_PENDING_APPROVAL);
@@ -102,43 +122,55 @@ public class WorkflowService {
                 throw new RuntimeException("No steps found for workflow template");
             }
 
-            createTasksFromTemplate(instance, steps);
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            String wfType = template != null && template.getWorkflowType() != null
+                    ? template.getWorkflowType()
+                    : WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL;
+
+            createTasksFromTemplate(instance, steps, wfType);
 
         } else {
             // Manual flow with ad-hoc approvers
-            createTasksManual(instance, request.getApprovers());
+            createTasksManual(instance, request.getApprovers(), instance.getWorkflowType());
         }
 
         return instance;
     }
 
-    // Create tasks based on template steps
-    private void createTasksFromTemplate(WorkflowInstance instance, List<WorkflowTemplateStep> steps) {
-        for (WorkflowTemplateStep step : steps) {
+    // Create tasks based on template steps; workflowType controls initial task statuses
+    private void createTasksFromTemplate(WorkflowInstance instance, List<WorkflowTemplateStep> steps, String workflowType) {
+        boolean isParallel = WorkflowConstants.WORKFLOW_TYPE_PARALLEL.equalsIgnoreCase(workflowType);
+
+        for (int i = 0; i < steps.size(); i++) {
+            WorkflowTemplateStep step = steps.get(i);
             WorkflowTask task = new WorkflowTask();
 
             task.setInstanceId(instance.getId());
             task.setStepOrder(step.getStepOrder());
-            // If approverUserId is set → assign to that user; otherwise assign to role 
+            // If approverUserId is set → assign to that user; otherwise assign to role
             task.setUserId(
                     step.getApproverUserId() != null && !step.getApproverUserId().isBlank()
                             ? step.getApproverUserId()
                             : step.getApproverRole()
             );
-            task.setStatus(WorkflowConstants.TASK_PENDING);
+            // For parallel workflows all tasks start ACTIVE; for sequential only the first is ACTIVE
+            task.setStatus(isParallel ? WorkflowConstants.TASK_ACTIVE : (i == 0 ? WorkflowConstants.TASK_ACTIVE : WorkflowConstants.TASK_PENDING));
             taskRepo.save(task);
         }
     }
 
     // Create tasks manually (no template)
-    private void createTasksManual(WorkflowInstance instance, List<String> approvers) {
-        int order = 1;
-        for (String role : approvers) {
+    private void createTasksManual(WorkflowInstance instance, List<String> approvers, String workflowType) {
+        boolean isParallel = WorkflowConstants.WORKFLOW_TYPE_PARALLEL.equalsIgnoreCase(workflowType);
+
+        for (int i = 0; i < approvers.size(); i++) {
+            String role = approvers.get(i);
             WorkflowTask task = new WorkflowTask();
             task.setInstanceId(instance.getId());
-            task.setStepOrder(order++);
+            task.setStepOrder(i + 1);
             task.setUserId(role);
-            task.setStatus(WorkflowConstants.TASK_PENDING);
+            // For parallel workflows all tasks start ACTIVE; for sequential only the first is ACTIVE
+            task.setStatus(isParallel ? WorkflowConstants.TASK_ACTIVE : (i == 0 ? WorkflowConstants.TASK_ACTIVE : WorkflowConstants.TASK_PENDING));
             taskRepo.save(task);
         }
     }

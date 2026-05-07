@@ -16,6 +16,8 @@ public class CreateWorkflowRequest {
     private String description;
     private String priority;
     private LocalDate dueDate;
+    // Workflow type: SEQUENTIAL or PARALLEL
+    private String workflowType;
     private List<String> approvers;
     private String createdByUserId;
     private boolean saveAsTemplate;
