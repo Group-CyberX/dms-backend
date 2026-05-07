@@ -6,6 +6,7 @@ import lombok.*;
 import java.time.LocalDate;
 
 @Entity
+@Table(name = "workflow_instance")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -27,4 +28,6 @@ public class WorkflowInstance {
     private LocalDate dueDate;
 
     private String status;
+
+    private String createdByUserId;
 }
