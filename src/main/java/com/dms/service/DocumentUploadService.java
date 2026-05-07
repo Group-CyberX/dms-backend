@@ -65,7 +65,7 @@ public class DocumentUploadService {
     );
 
     private static final Pattern SAFE_FILENAME = Pattern.compile(
-            "^.+\\.(pdf|docx|xlsx|png|jpg|jpeg)$",
+            "^[A-Za-z0-9_-]+\\.(pdf|docx|xlsx|png|jpg|jpeg)$",
             Pattern.CASE_INSENSITIVE
     );
 
