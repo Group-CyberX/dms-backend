@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@Table(name = "workflow_task")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -21,4 +22,7 @@ public class WorkflowTask {
     private String userId;
 
     private String status;
+
+    @Column(length = 2000)
+    private String actionComment;
 }

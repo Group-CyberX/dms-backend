@@ -3,6 +3,7 @@ package com.dms.config;
 import com.dms.security.JwtFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -11,10 +12,13 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -29,20 +33,52 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:3001"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 
         http
                 // Enable CORS for frontend-backend communication
-                .cors(cors -> {})
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 // Disable CSRF because we use stateless JWT authentication
                 .csrf(AbstractHttpConfigurer::disable)
 
                 // Define authorization rules for endpoints
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints - no authentication required
                         .requestMatchers("/auth/**").permitAll()
+
+                        // Share links: POST requires auth, access is public, GET is public, DELETE requires auth
+                        .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll()
+                        .requestMatchers(HttpMethod.DELETE, "/api/share-links/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
+
+                        // Comments: public read/write for shared documents
+                        .requestMatchers("/api/comments/**").permitAll()
+
+                        // Approver endpoints: allow listing approvers publicly, but require auth for current user
+                        .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
+
+                        // Admin endpoints
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
                         .requestMatchers("/user/").hasAnyRole("USER", "SYSTEM_ADMIN")
+
+                        // Other APIs require authentication
                         .anyRequest().authenticated()
                 )
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -53,6 +89,7 @@ public class SecurityConfig {
 
         return http.build();
     }
+
     // Password encoder using BCrypt hashing
     @Bean
     public PasswordEncoder passwordEncoder(){

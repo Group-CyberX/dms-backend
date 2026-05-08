@@ -3,6 +3,7 @@ package com.dms.rest;
 import com.dms.dto.TagDTO;
 import com.dms.models.Tag;
 import com.dms.service.TagService;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,9 +21,7 @@ public class TagController {
         this.tagService = tagService;
     }
 
-    /**
-     * Get all tags for a document
-     */
+    //Get all tags for a document 
     @GetMapping("/document/{documentId}")
     public ResponseEntity<List<TagDTO>> getTagsForDocument(@PathVariable("documentId") UUID documentId) {
         List<Tag> tags = tagService.getTagsForDocument(documentId);
@@ -32,14 +31,13 @@ public class TagController {
         return ResponseEntity.ok(tagDTOs);
     }
 
-    /**
-     * Add a new tag to a document
-     */
+    //Add a new tag to a document
+    @Transactional
     @PostMapping("/document/{documentId}")
     public ResponseEntity<TagDTO> addTagToDocument(
             @PathVariable("documentId") UUID documentId,
             @RequestParam("tagName") String tagName) {
-        Tag tag = tagService.getOrCreateTag(tagName);
+        Tag tag = tagService.addTagToDocument(documentId, tagName);
         return ResponseEntity.ok(new TagDTO(tag.getTag_id(), tag.getTag_name()));
     }
 }

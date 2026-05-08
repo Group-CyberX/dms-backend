@@ -1,8 +1,14 @@
 package com.dms.service;
 
+import com.dms.constants.WorkflowConstants;
+import com.dms.dao.WorkflowInstanceRepository;
+import com.dms.dao.WorkflowTaskRepository;
+import com.dms.dao.WorkflowTemplateStepRepository;
 import com.dms.dto.CreateWorkflowRequest;
-import com.dms.models.*;
-import com.dms.dao.*;
+import com.dms.models.WorkflowInstance;
+import com.dms.models.WorkflowTask;
+import com.dms.models.WorkflowTemplate;
+import com.dms.models.WorkflowTemplateStep;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -10,68 +16,167 @@ import java.util.List;
 @Service
 public class WorkflowService {
 
-    private final com.dms.dao.WorkflowInstanceRepository instanceRepo;
-    private final com.dms.dao.WorkflowTaskRepository taskRepo;
-    private final com.dms.dao.WorkflowTemplateStepRepository stepRepo;
+    private final WorkflowInstanceRepository instanceRepo;
+    private final WorkflowTaskRepository taskRepo;
+    private final WorkflowTemplateStepRepository stepRepo;
+    private final WorkflowTemplateService templateService;
+    private final DocumentLifecycleService documentLifecycleService;
 
+    // Constructor injection of dependencies
     public WorkflowService(
-            com.dms.dao.WorkflowInstanceRepository instanceRepo,
-            com.dms.dao.WorkflowTaskRepository taskRepo,
-            com.dms.dao.WorkflowTemplateStepRepository stepRepo) {
-
+            WorkflowInstanceRepository instanceRepo,
+            WorkflowTaskRepository taskRepo,
+            WorkflowTemplateStepRepository stepRepo,
+            WorkflowTemplateService templateService,
+            DocumentLifecycleService documentLifecycleService
+    ) {
         this.instanceRepo = instanceRepo;
         this.taskRepo = taskRepo;
         this.stepRepo = stepRepo;
+        this.templateService = templateService;
+        this.documentLifecycleService = documentLifecycleService;
     }
 
-    public com.dms.models.WorkflowInstance createWorkflow(CreateWorkflowRequest request) {
+    // Main method to create workflow (manual or template-based)
+    public WorkflowInstance createWorkflow(CreateWorkflowRequest request) {
 
-        com.dms.models.WorkflowInstance instance = new com.dms.models.WorkflowInstance();
+        if (request.getDocumentId() == null || request.getDocumentId().isBlank()) {
+            throw new RuntimeException("Document ID is required");
+        }
+        if (request.getWorkflowName() == null || request.getWorkflowName().isBlank()) {
+            throw new RuntimeException("Workflow name is required");
+        }
+        if (request.getPriority() == null || request.getPriority().isBlank()) {
+            throw new RuntimeException("Priority is required");
+        }
+        if (request.getDueDate() == null) {
+            throw new RuntimeException("Due date is required");
+        }
+
+        Long finalTemplateId = request.getTemplateId();
+
+        // Manual workflow                 
+        if (finalTemplateId == null) {
+
+            // Must provide approvers for manual workflow
+            if (request.getApprovers() == null || request.getApprovers().isEmpty()) {
+                throw new RuntimeException("Approvers are required for manual workflow");
+            }
+
+            if (request.isSaveAsTemplate()) {
+                // Convert manual workflow → save as reusable template   
+                WorkflowTemplate newTemplate =
+                        templateService.createTemplateFromManualWorkflow(request);
+                finalTemplateId = newTemplate.getId();
+            } else {
+                // Pure manual workflow (no template)
+                finalTemplateId = null;
+            }
+        }
+
+        WorkflowInstance instance = new WorkflowInstance();
         instance.setDocumentId(request.getDocumentId());
-        instance.setTemplateId(request.getTemplateId());
+        instance.setTemplateId(finalTemplateId);
         instance.setWorkflowName(request.getWorkflowName());
+        if (finalTemplateId != null) {
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            instance.setDescription(template != null ? template.getDescription() : request.getDescription());
+            instance.setDocumentType(template != null ? template.getDocumentType() : request.getDocumentType());
+        } else {
+            instance.setDescription(request.getDescription());
+            instance.setDocumentType(request.getDocumentType());
+        }
         instance.setPriority(request.getPriority());
         instance.setDueDate(request.getDueDate());
-        instance.setStatus("PENDING_APPROVAL");
+        // Persist workflow type: prefer template type for template-based workflows,
+        // otherwise use the value from the request (manual workflows)
+        if (finalTemplateId != null) {
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            instance.setWorkflowType(template != null && template.getWorkflowType() != null
+                ? template.getWorkflowType()
+                : WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL);
+        } else {
+            instance.setWorkflowType(request.getWorkflowType() == null || request.getWorkflowType().isBlank()
+                ? WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL
+                : request.getWorkflowType());
+        }
+
+        // Default status
+        instance.setStatus(WorkflowConstants.WORKFLOW_PENDING_APPROVAL);
+        instance.setCreatedByUserId(request.getCreatedByUserId());
 
         instance = instanceRepo.save(instance);
 
-        if (request.getTemplateId() != null) {
+        documentLifecycleService.updateDocumentStatus(
+                request.getDocumentId(),
+                WorkflowConstants.DOCUMENT_PENDING_APPROVAL
+        );
 
-            List<com.dms.models.WorkflowTemplateStep> steps =
-                    stepRepo.findByTemplateId(request.getTemplateId());
+        if (finalTemplateId != null) {
 
-            for (com.dms.models.WorkflowTemplateStep step : steps) {
+            // Template-based workflow
+            List<WorkflowTemplateStep> steps =
+                    stepRepo.findByTemplateIdOrderByStepOrderAsc(finalTemplateId);
 
-                com.dms.models.WorkflowTask task = new com.dms.models.WorkflowTask();
-                task.setInstanceId(instance.getId());
-                task.setStepOrder(step.getStepOrder());
-                task.setUserId(step.getApproverRole());
-                task.setStatus("PENDING");
-
-                taskRepo.save(task);
+            if (steps == null || steps.isEmpty()) {
+                throw new RuntimeException("No steps found for workflow template");
             }
+
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            String wfType = template != null && template.getWorkflowType() != null
+                    ? template.getWorkflowType()
+                    : WorkflowConstants.WORKFLOW_TYPE_SEQUENTIAL;
+
+            createTasksFromTemplate(instance, steps, wfType);
 
         } else {
-
-            int order = 1;
-
-            for (String user : request.getApprovers()) {
-
-                com.dms.models.WorkflowTask task = new com.dms.models.WorkflowTask();
-                task.setInstanceId(instance.getId());
-                task.setStepOrder(order++);
-                task.setUserId(user);
-                task.setStatus("PENDING");
-
-                taskRepo.save(task);
-            }
+            // Manual flow with ad-hoc approvers
+            createTasksManual(instance, request.getApprovers(), instance.getWorkflowType());
         }
 
         return instance;
     }
 
-    public List<com.dms.models.WorkflowInstance> getAllWorkflows() {
+    // Create tasks based on template steps; workflowType controls initial task statuses
+    private void createTasksFromTemplate(WorkflowInstance instance, List<WorkflowTemplateStep> steps, String workflowType) {
+        boolean isParallel = WorkflowConstants.WORKFLOW_TYPE_PARALLEL.equalsIgnoreCase(workflowType);
+
+        for (int i = 0; i < steps.size(); i++) {
+            WorkflowTemplateStep step = steps.get(i);
+            WorkflowTask task = new WorkflowTask();
+
+            task.setInstanceId(instance.getId());
+            task.setStepOrder(step.getStepOrder());
+            // If approverUserId is set → assign to that user; otherwise assign to role
+            task.setUserId(
+                    step.getApproverUserId() != null && !step.getApproverUserId().isBlank()
+                            ? step.getApproverUserId()
+                            : step.getApproverRole()
+            );
+            // For parallel workflows all tasks start ACTIVE; for sequential only the first is ACTIVE
+            task.setStatus(isParallel ? WorkflowConstants.TASK_ACTIVE : (i == 0 ? WorkflowConstants.TASK_ACTIVE : WorkflowConstants.TASK_PENDING));
+            taskRepo.save(task);
+        }
+    }
+
+    // Create tasks manually (no template)
+    private void createTasksManual(WorkflowInstance instance, List<String> approvers, String workflowType) {
+        boolean isParallel = WorkflowConstants.WORKFLOW_TYPE_PARALLEL.equalsIgnoreCase(workflowType);
+
+        for (int i = 0; i < approvers.size(); i++) {
+            String role = approvers.get(i);
+            WorkflowTask task = new WorkflowTask();
+            task.setInstanceId(instance.getId());
+            task.setStepOrder(i + 1);
+            task.setUserId(role);
+            // For parallel workflows all tasks start ACTIVE; for sequential only the first is ACTIVE
+            task.setStatus(isParallel ? WorkflowConstants.TASK_ACTIVE : (i == 0 ? WorkflowConstants.TASK_ACTIVE : WorkflowConstants.TASK_PENDING));
+            taskRepo.save(task);
+        }
+    }
+
+    // Fetch all workflow instances (for listing / My Tasks page)
+    public List<WorkflowInstance> getAllWorkflows() {
         return instanceRepo.findAll();
     }
 }
