@@ -9,11 +9,17 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
@@ -28,14 +34,11 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-
         http
-                .cors(cors -> {})
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-
-                        // Public auth endpoints
                         .requestMatchers("/auth/**").permitAll()
 
                         // Share links
@@ -44,26 +47,37 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/share-links/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
 
-                        // Comments public
+                        // Comments & Notifications
                         .requestMatchers("/api/comments/**").permitAll()
+                        .requestMatchers("/api/notifications/**").authenticated()
 
-                        // Audit logs accessible to USER and SYSTEM_ADMIN
-                        .requestMatchers("/admin/logs").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        // Admin & User specific
+                        // CHANGED: Using /admin/logs/** allows both the main logs and /filter to work for both roles
+                        .requestMatchers("/admin/logs/**").hasAnyRole("USER", "SYSTEM_ADMIN")
 
-                        // Roles
+                        // General admin rules (Specific admin tasks)
                         .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
+
                         .requestMatchers("/user/**").hasAnyRole("USER", "SYSTEM_ADMIN")
 
-                        // Everything else secured
                         .anyRequest().authenticated()
                 )
-
-                .httpBasic(AbstractHttpConfigurer::disable)
-                .formLogin(AbstractHttpConfigurer::disable)
-
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
+        configuration.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean
