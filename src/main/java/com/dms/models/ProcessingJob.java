@@ -22,6 +22,9 @@ public class ProcessingJob {
     @Column(name = "status")
     private String status;
 
+    @Column(name = "result_message", columnDefinition = "TEXT")
+    private String resultMessage;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -74,6 +77,16 @@ public class ProcessingJob {
     // Set job status
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    // Get result message
+    public String getResultMessage() {
+        return resultMessage;
+    }
+
+    // Set result message
+    public void setResultMessage(String resultMessage) {
+        this.resultMessage = resultMessage;
     }
 
     // Get job creation time

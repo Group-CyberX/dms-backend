@@ -221,9 +221,12 @@ public class DocumentUploadService {
 
             documentVersionRepository.saveAndFlush(version);
 
-            // Queue the Processing Job!
-            com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
-            processingJobService.triggerOcrJobSafely(job.getJobId());
+            // Queue the Processing Jobs!
+            com.dms.models.ProcessingJob ocrJob = processingJobService.enqueueJob(versionId, "OCR");
+            processingJobService.triggerOcrJobSafely(ocrJob.getJobId());
+
+            com.dms.models.ProcessingJob virusScanJob = processingJobService.enqueueJob(versionId, "VIRUS_SCAN");
+            processingJobService.triggerVirusScanJobSafely(virusScanJob.getJobId());
 
             // Save Automatic Metadata (Content-Type and File Size)
             if (file.getContentType() != null) {

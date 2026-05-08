@@ -3,7 +3,6 @@ package com.dms.rest;
 import com.dms.models.DocumentVersions;
 import com.dms.service.DocumentVersionService;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;

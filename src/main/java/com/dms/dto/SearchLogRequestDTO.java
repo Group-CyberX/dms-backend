@@ -15,7 +15,7 @@ public class SearchLogRequestDTO {
 
     public UUID getClickedDocId() {
          return clickedDocId;
- }
+    }
     public void setClickedDocId(UUID clickedDocId) {
          this.clickedDocId = clickedDocId; 
     }

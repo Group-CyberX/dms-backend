@@ -21,6 +21,7 @@ public class ProcessingJobService {
     private final DocumentVersionRepository documentVersionRepository;
     private final MetadataExtractorService metadataExtractorService;
     private final DocumentVersionService documentVersionService; // Inject to download file
+    private final VirusScanService virusScanService;
 
     @Autowired
     @Lazy
@@ -29,11 +30,13 @@ public class ProcessingJobService {
     public ProcessingJobService(ProcessingJobRepository processingJobRepository,
                                 DocumentVersionRepository documentVersionRepository,
                                 MetadataExtractorService metadataExtractorService,
-                                @Lazy DocumentVersionService documentVersionService) {
+                                @Lazy DocumentVersionService documentVersionService,
+                                VirusScanService virusScanService) {
         this.processingJobRepository = processingJobRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.metadataExtractorService = metadataExtractorService;
         this.documentVersionService = documentVersionService;
+        this.virusScanService = virusScanService;
     }
 
     /**
@@ -111,5 +114,60 @@ public class ProcessingJobService {
         List<DocumentVersions> versions = documentVersionRepository.findByDocument_idOrderByCreated_atDesc(documentId);
         List<UUID> versionIds = versions.stream().map(DocumentVersions::getVersion_id).toList();
         return processingJobRepository.findByDocumentVersionIdIn(versionIds);
+    }
+
+    /**
+     * Helper to safely trigger the Async job ONLY AFTER the current transaction commits.
+     */
+    public void triggerVirusScanJobSafely(UUID jobId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    self.processVirusScanJobAsync(jobId);
+                }
+            });
+        } else {
+            self.processVirusScanJobAsync(jobId);
+        }
+    }
+
+    /**
+     * Background processing task for a Virus Scan Job.
+     */
+    @Async
+    public void processVirusScanJobAsync(UUID jobId) {
+        ProcessingJob job = processingJobRepository.findById(jobId)
+                .orElseThrow(() -> new RuntimeException("Job not found"));
+
+        try {
+            // Update Status to IN_PROGRESS
+            job.setStatus("IN_PROGRESS");
+            processingJobRepository.save(job);
+
+            // Locate the document version
+            DocumentVersions version = documentVersionRepository.findById(job.getDocumentVersionId())
+                    .orElseThrow(() -> new RuntimeException("Document Version not found"));
+
+            // Fetch file content
+            byte[] fileBytes = documentVersionService.getVersionFileBytes(version.getDocument_id(), version.getVersion_id());
+
+            // Perform virus scan using ClamAV
+            VirusScanService.ScanResult result = virusScanService.scanFile(fileBytes, version.getS3_bucket_key());
+
+            if (!result.isClean) {
+                job.setStatus("FAILED");
+                job.setResultMessage("Virus detected: " + result.threatName);
+            } else {
+                job.setStatus("SUCCESS");
+                job.setResultMessage(result.message);
+            }
+
+        } catch (Exception e) {
+            job.setStatus("FAILED");
+            job.setResultMessage("Error: " + e.getMessage());
+        } finally {
+            processingJobRepository.save(job);
+        }
     }
 }

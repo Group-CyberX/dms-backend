@@ -29,11 +29,27 @@ public class SearchController {
      * Usage: GET /api/search?query=searchTerm
      */
     @GetMapping
-    public ResponseEntity<List<SearchResponseDTO>> search(@RequestParam String query) {
+    public ResponseEntity<?> search(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Boolean paged) {
         if (query == null || query.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
         List<SearchResponseDTO> results = searchService.universalSearch(query);
+
+        if (Boolean.TRUE.equals(paged)) {
+            int start = Math.min(page * size, results.size());
+            int end = Math.min((page + 1) * size, results.size());
+            List<SearchResponseDTO> pagedContent = results.subList(start, end);
+            return ResponseEntity.ok(new org.springframework.data.domain.PageImpl<>(
+                    pagedContent, 
+                    org.springframework.data.domain.PageRequest.of(page, size), 
+                    results.size()
+            ));
+        }
+
         return ResponseEntity.ok(results);
     }
 
@@ -42,11 +58,27 @@ public class SearchController {
      * Usage: GET /api/search/tags?tag=tagName
      */
     @GetMapping("/tags")
-    public ResponseEntity<List<SearchResponseDTO>> searchByTag(@RequestParam String tag) {
+    public ResponseEntity<?> searchByTag(
+            @RequestParam String tag,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Boolean paged) {
         if (tag == null || tag.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
         List<SearchResponseDTO> results = searchService.searchByTag(tag);
+
+        if (Boolean.TRUE.equals(paged)) {
+            int start = Math.min(page * size, results.size());
+            int end = Math.min((page + 1) * size, results.size());
+            List<SearchResponseDTO> pagedContent = results.subList(start, end);
+            return ResponseEntity.ok(new org.springframework.data.domain.PageImpl<>(
+                    pagedContent, 
+                    org.springframework.data.domain.PageRequest.of(page, size), 
+                    results.size()
+            ));
+        }
+
         return ResponseEntity.ok(results);
     }
 
@@ -55,8 +87,25 @@ public class SearchController {
      * Usage: POST /api/search/advanced with AdvancedSearchRequestDTO body
      */
     @PostMapping("/advanced")
-    public ResponseEntity<List<SearchResponseDTO>> advancedSearch(@RequestBody AdvancedSearchRequestDTO filters) {
+    public ResponseEntity<?> advancedSearch(
+            @RequestBody AdvancedSearchRequestDTO filters,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) Boolean paged) {
+                
         List<SearchResponseDTO> results = searchService.advancedSearch(filters);
+        
+        if (Boolean.TRUE.equals(paged)) {
+            int start = Math.min(page * size, results.size());
+            int end = Math.min((page + 1) * size, results.size());
+            List<SearchResponseDTO> pagedContent = results.subList(start, end);
+            return ResponseEntity.ok(new org.springframework.data.domain.PageImpl<>(
+                    pagedContent, 
+                    org.springframework.data.domain.PageRequest.of(page, size), 
+                    results.size()
+            ));
+        }
+        
         return ResponseEntity.ok(results);
     }
 

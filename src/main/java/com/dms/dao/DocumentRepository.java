@@ -16,14 +16,16 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select (count(d) > 0) from Documents d where d.is_deleted = false and d.title = :title and ((:folderId is null and d.folder_id is null) or d.folder_id = :folderId)")
     boolean existsByTitleInFolder(@Param("title") String title, @Param("folderId") UUID folderId);
 
-    // Search functionality - Search across document title and metadata
+    // Search functionality - Search across document title, metadata, and OCR content
     @Query("""
         SELECT DISTINCT d FROM Documents d
         LEFT JOIN d.metadata m
+        LEFT JOIN DocumentVersions v ON d.document_id = v.document_id
         WHERE (:searchTerm IS NULL 
                OR LOWER(d.title) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
                OR LOWER(m.key) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
-               OR LOWER(m.value) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
+               OR LOWER(m.value) LIKE LOWER(CONCAT('%', :searchTerm, '%'))
+               OR LOWER(v.ocr_content) LIKE LOWER(CONCAT('%', :searchTerm, '%')))
     """)
     List<Documents> universalSearch(@Param("searchTerm") String searchTerm);
 
@@ -57,18 +59,20 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     """, nativeQuery = true)
     List<Documents> searchByTag(String tagName);
 
-    // Combined search - search title, metadata, AND tags
+    // Combined search - search title, metadata, tags AND OCR content
     @Query(value = """
         SELECT DISTINCT d.* FROM \"Document\" d
         LEFT JOIN document_metadata m ON d.document_id = m.document_id
         LEFT JOIN \"DocumentTag\" dt ON d.document_id = dt.document_id
         LEFT JOIN \"Tag\" t ON dt.tag_id = t.tag_id
+        LEFT JOIN \"DocumentVersion\" v ON d.document_id = v.document_id
         WHERE d.is_deleted = false
               AND (?1 IS NULL 
                    OR LOWER(d.title) LIKE LOWER(CONCAT('%', ?1, '%'))
                    OR LOWER(m.meta_key) LIKE LOWER(CONCAT('%', ?1, '%'))
                    OR LOWER(m.meta_value) LIKE LOWER(CONCAT('%', ?1, '%'))
-                   OR LOWER(t.tag_name) LIKE LOWER(CONCAT('%', ?1, '%')))
+                   OR LOWER(t.tag_name) LIKE LOWER(CONCAT('%', ?1, '%'))
+                   OR LOWER(v.ocr_content) LIKE LOWER(CONCAT('%', ?1, '%')))
     """, nativeQuery = true)
     List<Documents> universalSearchIncludingTags(String searchTerm);
 }
