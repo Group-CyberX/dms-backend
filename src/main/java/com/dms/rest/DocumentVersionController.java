@@ -22,7 +22,7 @@ public class DocumentVersionController {
         this.documentVersionService = documentVersionService;
     }
 
-    // 1️⃣ Upload new document version
+    // Upload new document version
     @PostMapping("/upload")
     public ResponseEntity<?> uploadNewVersion(@PathVariable("documentId") UUID documentId,
                                               @RequestParam("file") MultipartFile file) {
@@ -36,14 +36,14 @@ public class DocumentVersionController {
         }
     }
 
-    // 2️⃣ Get all versions of a document
+    // Get all versions of a document
     @GetMapping
     public ResponseEntity<List<DocumentVersions>> getAllVersions(@PathVariable("documentId") UUID documentId) {
         List<DocumentVersions> versions = documentVersionService.listVersions(documentId);
         return ResponseEntity.ok(versions);
     }
 
-    // 3️⃣ Get specific version details
+    // Get specific version details
     @GetMapping("/{versionId}")
     public ResponseEntity<DocumentVersions> getVersion(@PathVariable("documentId") UUID documentId,
                                                        @PathVariable("versionId") UUID versionId) {
@@ -51,7 +51,7 @@ public class DocumentVersionController {
         return version.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    // 5️⃣ Restore previous version
+    // Restore previous version
     @PostMapping("/{versionId}/restore")
     public ResponseEntity<?> restoreVersion(@PathVariable("documentId") UUID documentId,
                                             @PathVariable("versionId") UUID versionId) {
@@ -63,7 +63,7 @@ public class DocumentVersionController {
         }
     }
 
-    // 6️⃣ Delete version (optional)
+    // Delete version (optional)
     @DeleteMapping("/{versionId}")
     public ResponseEntity<?> deleteVersion(@PathVariable("documentId") UUID documentId,
                                            @PathVariable("versionId") UUID versionId) {
@@ -79,23 +79,23 @@ public class DocumentVersionController {
         }
     }
 
-    // 4️⃣ Download specific version
+    // Download specific version (existing proxied download)
     @GetMapping("/{versionId}/download")
     public ResponseEntity<?> downloadVersion(@PathVariable("documentId") UUID documentId,
                                              @PathVariable("versionId") UUID versionId) {
         try {
             byte[] fileBytes = documentVersionService.getVersionFileBytes(documentId, versionId);
             Optional<DocumentVersions> version = documentVersionService.getVersion(documentId, versionId);
-            
+
             if (version.isEmpty()) {
                 return ResponseEntity.notFound().build();
             }
-            
+
             String fileName = version.get().getS3_bucket_key();
             if (fileName != null && fileName.contains("/")) {
                 fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
             }
-            
+
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                     .header(HttpHeaders.CONTENT_TYPE, "application/octet-stream")
@@ -104,6 +104,25 @@ public class DocumentVersionController {
             return ResponseEntity.notFound().build();
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body("Download failed: " + e.getMessage());
+        }
+    }
+
+    // Generate pre-signed S3 download URL
+    record PresignedUrlResponse(String url, long expiresInSeconds) {}
+
+    @GetMapping("/{versionId}/download-url")
+    public ResponseEntity<?> getDownloadUrl(@PathVariable("documentId") UUID documentId,
+                                            @PathVariable("versionId") UUID versionId) {
+        try {
+            String url = documentVersionService.generatePresignedDownloadUrl(documentId, versionId);
+            long ttl = documentVersionService.getPresignExpirySeconds();
+            return ResponseEntity.ok(new PresignedUrlResponse(url, ttl));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to create presigned URL: " + e.getMessage());
         }
     }
 }

@@ -6,6 +6,7 @@ import com.dms.dao.DocumentMetadataRepository;
 import com.dms.models.Documents;
 import com.dms.models.DocumentMetadata;
 import com.dms.models.DocumentVersions;
+import com.dms.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,8 +19,16 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.time.Duration;
 import java.util.*;
 import java.util.regex.Pattern;
+
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 @Service
 public class DocumentVersionService {
@@ -42,7 +51,11 @@ public class DocumentVersionService {
     @Value("${app.s3.bucket:}")
     private String bucket;
 
+    @Value("${app.s3.presign.expiry-seconds:120}")
+    private long presignExpirySeconds;
+
     private final software.amazon.awssdk.services.s3.S3Client s3Client;
+    private final S3Presigner s3Presigner;
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "application/pdf",
@@ -66,13 +79,14 @@ public class DocumentVersionService {
                                   software.amazon.awssdk.services.s3.S3Client s3Client,
                                   MetadataExtractorService metadataExtractorService,
                                   DocumentMetadataRepository documentMetadataRepository,
-                                  ProcessingJobService processingJobService) {
+                                  ProcessingJobService processingJobService, S3Presigner s3Presigner) {
+        this.metadataExtractorService = metadataExtractorService;
+        this.documentMetadataRepository = documentMetadataRepository;
+        this.processingJobService = processingJobService;                    
         this.documentVersionRepository = documentVersionRepository;
         this.documentRepository = documentRepository;
         this.s3Client = s3Client;
-        this.metadataExtractorService = metadataExtractorService;
-        this.documentMetadataRepository = documentMetadataRepository;
-        this.processingJobService = processingJobService;
+        this.s3Presigner = s3Presigner;
     }
 
     public List<DocumentVersions> listVersions(UUID documentId) {
@@ -272,14 +286,16 @@ public class DocumentVersionService {
     }
 
     private String buildStorageKey(UUID documentId, UUID versionId, String original) {
-        return documentId + "/" + versionId + "/" + original;
+        UUID userId = SecurityUtils.currentUserId();
+        return userId + "/" + documentId + "/" + versionId + "/" + original;
     }
 
     private String buildStorageKey(UUID documentId, UUID versionId, String original, String categoryPrefix) {
+        UUID userId = SecurityUtils.currentUserId();
         if (categoryPrefix == null || categoryPrefix.isBlank()) {
             return buildStorageKey(documentId, versionId, original);
         }
-        return categoryPrefix + "/" + documentId + "/" + versionId + "/" + original;
+        return userId + "/" + categoryPrefix + "/" + documentId + "/" + versionId + "/" + original;
     }
 
     private void uploadToS3(String key, MultipartFile file) throws IOException {
@@ -355,13 +371,21 @@ public class DocumentVersionService {
             return null;
         }
         
-        // Check if the key starts with a category prefix (before documentId)
+        // Extract category prefix from path: userId/category/documentId/...
+        // First, skip the userId part
+        UUID userId = SecurityUtils.currentUserId();
+        String userIdPrefix = userId + "/";
+        if (!existingKey.startsWith(userIdPrefix)) {
+            return null;
+        }
+        
+        String afterUserId = existingKey.substring(userIdPrefix.length());
         String docIdStr = documentId.toString();
-        int docIdIndex = existingKey.indexOf(docIdStr);
+        int docIdIndex = afterUserId.indexOf(docIdStr);
         
         if (docIdIndex > 0) {
-            // There's a prefix before documentId - extract it (remove trailing slash)
-            return existingKey.substring(0, docIdIndex - 1);
+            // There's a category prefix between userId and documentId - extract it (remove trailing slash)
+            return afterUserId.substring(0, docIdIndex - 1);
         }
         
         return null;
@@ -405,5 +429,57 @@ public class DocumentVersionService {
             throw new IOException("File not found: " + fileName);
         }
         return Files.readAllBytes(filePath);
+    }
+
+    public String generatePresignedDownloadUrl(UUID documentId, UUID versionId) throws IOException {
+        DocumentVersions version = documentVersionRepository.findById(versionId)
+                .filter(v -> v.getDocument_id().equals(documentId))
+                .orElseThrow(() -> new IllegalArgumentException("Version not found"));
+
+        if (!"s3".equalsIgnoreCase(storageType)) {
+            throw new IllegalStateException("Presigned URLs are only available when storageType=s3");
+        }
+        String key = version.getS3_bucket_key();
+        if (key == null || key.isBlank()) {
+            throw new IOException("Missing storage key for version");
+        }
+        if (bucket == null || bucket.isBlank()) {
+            throw new IOException("S3 bucket is not configured");
+        }
+
+        // Determine filename from key
+        String fileName = key;
+        int idx = fileName.lastIndexOf('/');
+        if (idx >= 0 && idx < fileName.length() - 1) {
+            fileName = fileName.substring(idx + 1);
+        }
+
+        // Try to get content type from S3 metadata
+        String contentType = null;
+        try {
+            HeadObjectResponse head = s3Client.headObject(b -> b.bucket(bucket).key(key));
+            contentType = head.contentType();
+        } catch (SdkException e) {
+            // ignore and proceed without content type override
+        }
+
+        GetObjectRequest.Builder getReq = GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .responseContentDisposition("attachment; filename=\"" + fileName + "\"");
+        if (contentType != null && !contentType.isBlank()) {
+            getReq.responseContentType(contentType);
+        }
+
+        GetObjectPresignRequest presign = GetObjectPresignRequest.builder()
+                .signatureDuration(Duration.ofSeconds(Math.max(1, presignExpirySeconds)))
+                .getObjectRequest(getReq.build())
+                .build();
+
+        return s3Presigner.presignGetObject(presign).url().toString();
+    }
+
+    public long getPresignExpirySeconds() {
+        return presignExpirySeconds;
     }
 }

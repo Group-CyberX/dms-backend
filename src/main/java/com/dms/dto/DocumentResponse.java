@@ -1,63 +1,30 @@
-package com.dms.models;
+package com.dms.dto;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-
-
 import java.util.UUID;
 
-@Entity(name = "Documents")
-@Table(name = "\"Document\"")
-public class Documents {
-    @Id
-    @Column(name = "document_id")
+public class DocumentResponse {
     private UUID document_id;
-
-    @Column(name = "title")
     private String title;
-
-    @Column(name = "owner_id")
     private UUID owner_id;
-
-    @Column(name = "folder_id")
+    private String owner_name;
     private UUID folder_id;
-
-    @Column(name = "current_version_id")
     private UUID current_version_id;
-
-    @Column(name = "created_at")
     private LocalDateTime created_at;
-
-    @Column(name = "deleted_at")
     private LocalDateTime deleted_at;
-
-    @Column(name = "file_size")
     private Long file_size;
-
-    @Column(name = "is_locked")
     private boolean is_locked;
-
-    @Column(name = "is_deleted")
     private boolean is_deleted;
 
-    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<DocumentMetadata> metadata = new ArrayList<>();
+    public DocumentResponse() {
+    }
 
-    public Documents(UUID document_id,
-                   String title,
-                   UUID owner_id,
-                   UUID folder_id,
-                   UUID current_version_id,
-                   LocalDateTime created_at,
-                   LocalDateTime deleted_at,
-                   Long file_size,
-                   boolean is_locked,
-                   boolean is_deleted) {
+    public DocumentResponse(UUID document_id, String title, UUID owner_id, String owner_name, UUID folder_id,
+                       UUID current_version_id, LocalDateTime created_at, LocalDateTime deleted_at, Long file_size, boolean is_locked, boolean is_deleted) {
         this.document_id = document_id;
         this.title = title;
         this.owner_id = owner_id;
+        this.owner_name = owner_name;
         this.folder_id = folder_id;
         this.current_version_id = current_version_id;
         this.created_at = created_at;
@@ -65,10 +32,6 @@ public class Documents {
         this.file_size = file_size;
         this.is_locked = is_locked;
         this.is_deleted = is_deleted;
-    }
-
-    public Documents() {
-
     }
 
     public UUID getDocument_id() {
@@ -93,6 +56,14 @@ public class Documents {
 
     public void setOwner_id(UUID owner_id) {
         this.owner_id = owner_id;
+    }
+
+    public String getOwner_name() {
+        return owner_name;
+    }
+
+    public void setOwner_name(String owner_name) {
+        this.owner_name = owner_name;
     }
 
     public UUID getFolder_id() {
@@ -149,31 +120,5 @@ public class Documents {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
-    }
-
-    @Override
-    public String toString() {
-        return "Folders{" +
-                "document_id=" + document_id +
-                ", title='" + title + '\'' +
-                ", owner_id=" + owner_id +
-                ", folder_id=" + folder_id +
-                ", current_version_id=" + current_version_id +
-                ", created_at=" + created_at +
-                ", deleted_at=" + deleted_at +
-                ", file_size=" + file_size +
-                ", is_locked=" + is_locked +
-                ", is_deleted=" + is_deleted +
-                '}';
-    }
-
-    
-
-    public List<DocumentMetadata> getMetadata() {
-        return metadata;
-    }
-
-    public void setMetadata(List<DocumentMetadata> metadata) {
-        this.metadata = metadata;
     }
 }
