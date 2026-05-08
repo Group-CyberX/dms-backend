@@ -23,6 +23,7 @@ public class UserService {
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
     }
+
     public List<User> getAllUsers(){
         return userRepository.findAll();
     }
@@ -49,7 +50,7 @@ public class UserService {
         );
     }
 
-    public User createUser(String username,String email,String password,String roleName){
+    public User createUser(String username, String email, String password, String roleName){
         roleName = roleName.toUpperCase();
         if (userRepository.findByEmail(email).isPresent()) {
             throw new RuntimeException("Email already exists");
@@ -66,6 +67,7 @@ public class UserService {
 
         return userRepository.save(user);
     }
+
     public User updateUser(UUID userId, String username, String roleName) {
         roleName = roleName.toUpperCase();
         User user = userRepository.findById(userId)
@@ -79,6 +81,7 @@ public class UserService {
 
         return userRepository.save(user);
     }
+
     public User updateUserStatus(UUID userId, String status) {
         if (!status.equals("ACTIVE") && !status.equals("INACTIVE")) {
             throw new RuntimeException("Invalid status");

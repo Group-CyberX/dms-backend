@@ -170,11 +170,29 @@ public class DocumentVersionService {
             com.dms.models.ProcessingJob job = processingJobService.enqueueJob(versionId, "OCR");
             processingJobService.triggerOcrJobSafely(job.getJobId());
             
-            // Save Automatic Metadata (Content-Type and File Size)
+            // Save or update automatic metadata (Content-Type and File Size)
+            // Check if Content-Type metadata exists, update if so, otherwise create new
             if (file.getContentType() != null) {
-                documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
+                var existingContentType = documentMetadataRepository.findByDocument_document_idAndKey(documentId, "Content-Type");
+                if (existingContentType.isPresent()) {
+                    DocumentMetadata metadata = existingContentType.get();
+                    metadata.setValue(file.getContentType());
+                    documentMetadataRepository.save(metadata);
+                } else {
+                    documentMetadataRepository.save(new DocumentMetadata(document, "Content-Type", file.getContentType()));
+                }
             }
-            documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", String.valueOf(file.getSize()) + " bytes"));
+            
+            // Check if File-Size metadata exists, update if so, otherwise create new
+            String fileSizeValue = String.valueOf(file.getSize()) + " bytes";
+            var existingFileSize = documentMetadataRepository.findByDocument_document_idAndKey(documentId, "File-Size");
+            if (existingFileSize.isPresent()) {
+                DocumentMetadata metadata = existingFileSize.get();
+                metadata.setValue(fileSizeValue);
+                documentMetadataRepository.save(metadata);
+            } else {
+                documentMetadataRepository.save(new DocumentMetadata(document, "File-Size", fileSizeValue));
+            }
             // update current version pointer
             document.setCurrent_version_id(versionId);
             documentRepository.save(document);

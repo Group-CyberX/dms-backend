@@ -8,6 +8,8 @@ import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
 import com.dms.models.User;
 import com.dms.service.DocumentUploadService;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -33,8 +35,10 @@ public class DocumentController {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.userRepository = userRepository;
-@GetMapping
-public List<DocumentResponse> getAll(Authentication auth) {
+    }
+
+    @GetMapping
+    public List<DocumentResponse> getAll(Authentication auth) {
 
     if (auth == null || !auth.isAuthenticated()) {
         throw new RuntimeException("User not authenticated");

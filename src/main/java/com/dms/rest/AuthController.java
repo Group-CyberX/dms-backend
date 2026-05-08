@@ -9,16 +9,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+// Controller responsible for handling authentication-related API requests
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
 
+    // Service layer handling business logic for authentication
     private final AuthService authService;
 
     public AuthController(AuthService authService){
         this.authService = authService;
     }
 
+    // Register a new user account
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request){
         try {
@@ -31,11 +34,13 @@ public class AuthController {
         }
     }
 
+    // Authenticate user and generate JWT tokens
     @PostMapping("/login")
     public LoginResponse login(@RequestBody LoginRequest request){
     return authService.login(request);
     }
 
+    // Initiate password reset process by sending reset toke
     @PostMapping("/forgot-password")
     public String forgotPassword(@RequestBody ForgotPasswordRequest request) {
 
@@ -44,11 +49,31 @@ public class AuthController {
     return "Reset link sent";
     }
 
+    // Reset user password using token
     @PostMapping("/reset-password")
     public String resetPassword(@RequestBody ResetPasswordRequest request) {
 
     authService.resetPassword(request.getToken(), request.getNewPassword());
 
     return "Password reset successful";
+    }
+
+    // Generate a new access token using a refresh token
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(@RequestBody RefreshTokenRequest request) {
+
+        return ResponseEntity.ok(
+                authService.refresh(request.getRefreshToken())
+        );
+    }
+
+    // Logout user by invalidating the refresh token
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(
+            @RequestBody RefreshTokenRequest request) {
+
+        authService.logout(request.getRefreshToken());
+
+        return ResponseEntity.ok("Logged out successfully");
     }
 }

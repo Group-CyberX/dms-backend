@@ -35,6 +35,18 @@ public class TagService {
         return tagRepository.save(newTag);
     }
 
+    @Transactional
+    public Tag addTagToDocument(UUID documentId, String tagName) {
+        Tag tag = getOrCreateTag(tagName);
+
+        if (!documentTagRepository.existsByDocumentIdAndTagId(documentId, tag.getTag_id())) {
+            DocumentTag documentTag = new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id());
+            documentTagRepository.save(documentTag);
+        }
+
+        return tag;
+    }
+
     //Save tags for a document
      
     @Transactional
@@ -50,12 +62,11 @@ public class TagService {
         for (String tagName : tagNames) {
             String trimmedTag = tagName.trim();
             if (!trimmedTag.isEmpty()) {
-                // Get or create tag
                 Tag tag = getOrCreateTag(trimmedTag);
-                
-                // Create document-tag relationship
-                DocumentTag docTag = new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id());
-                documentTags.add(docTag);
+
+                if (!documentTagRepository.existsByDocumentIdAndTagId(documentId, tag.getTag_id())) {
+                    documentTags.add(new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id()));
+                }
             }
         }
 

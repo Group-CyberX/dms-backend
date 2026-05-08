@@ -13,6 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+// Filter that runs once per request to validate JWT tokens
 @Component
 public class JwtFilter extends OncePerRequestFilter {
 
@@ -30,18 +31,29 @@ public class JwtFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
 
+        // Extract Authorization header
         final String authHeader = request.getHeader("Authorization");
         String token = null;
         String email = null;
 
+        // Check if header contains Bearer token
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring(7);
+
+            // Extract user email from JWT
             email = jwtUtil.extractEmail(token);
         }
 
+        // Authenticate user if not already authenticated
         if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+
+            // Validate JWT token
             if (jwtUtil.validateToken(token)) {
+
+                // Load user details from database
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
+
+                // Create authentication object
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(
                                 userDetails,
@@ -53,6 +65,7 @@ public class JwtFilter extends OncePerRequestFilter {
             }
         }
 
+        // Continue filter chain
         filterChain.doFilter(request, response);
     }
 }

@@ -1,57 +1,80 @@
 package com.dms.service;
 
-import net.sourceforge.tess4j.Tesseract;
-import net.sourceforge.tess4j.TesseractException;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.util.List;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class MetadataExtractorService {
 
-    // Extract text from an uploaded file based on content type
+    private static final boolean TESSERACT_AVAILABLE = isLibraryAvailable("net.sourceforge.tess4j.Tesseract");
+    private static final boolean PDFBOX_AVAILABLE = isLibraryAvailable("org.apache.pdfbox.pdmodel.PDDocument");
+
+    private static boolean isLibraryAvailable(String className) {
+        try {
+            Class.forName(className);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
     public String extractText(MultipartFile file) {
         String contentType = file.getContentType();
-        if (contentType == null) return "";
+        if (contentType == null) {
+            return "";
+        }
 
         try {
             return extractTextFromBytes(file.getBytes(), contentType, file.getOriginalFilename());
         } catch (IOException e) {
-            e.printStackTrace();
             return "";
         }
     }
 
-    // Route byte-based extraction to PDF or image OCR handlers
     public String extractTextFromBytes(byte[] fileBytes, String contentType, String originalFilename) {
-        if (contentType == null) return "";
+        if (contentType == null) {
+            return "";
+        }
 
-        if (contentType.equals("application/pdf")) {
+        if ("application/pdf".equals(contentType)) {
             return extractTextFromPdfBytes(fileBytes);
-        } else if (contentType.startsWith("image/")) {
+        }
+
+        if (contentType.startsWith("image/")) {
             return extractTextFromImageOcrBytes(fileBytes, originalFilename);
         }
+
         return "";
     }
 
-    // Extract text from image bytes using Tesseract OCR
     private String extractTextFromImageOcrBytes(byte[] fileBytes, String originalFilename) {
+        if (!TESSERACT_AVAILABLE) {
+            return "OCR not available on this platform";
+        }
+
         File tempFile = null;
         try {
-            tempFile = File.createTempFile("ocr_", originalFilename != null ? originalFilename : "image.png");
+            String suffix = originalFilename != null && originalFilename.contains(".")
+                    ? originalFilename.substring(originalFilename.lastIndexOf('.'))
+                    : ".img";
+            tempFile = File.createTempFile("ocr_", suffix);
             Files.write(tempFile.toPath(), fileBytes);
 
-            Tesseract tesseract = new Tesseract();
-            // Pointing to the Homebrew installation of Tesseract on MacOS
-            tesseract.setDatapath("/opt/homebrew/share/tessdata");
-            String result = tesseract.doOCR(tempFile);
+            Class<?> tesseractClass = Class.forName("net.sourceforge.tess4j.Tesseract");
+            Object tesseract = tesseractClass.getDeclaredConstructor().newInstance();
+
+            Method setDatapath = tesseractClass.getMethod("setDatapath", String.class);
+            setDatapath.invoke(tesseract, "/opt/homebrew/share/tessdata");
+
+            Method doOcr = tesseractClass.getMethod("doOCR", File.class);
+            String result = (String) doOcr.invoke(tesseract, tempFile);
             return result != null ? result.trim() : "";
-        } catch (TesseractException | IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
             return "OCR Processing Failed: " + e.getMessage();
         } finally {
             if (tempFile != null && tempFile.exists()) {
@@ -60,27 +83,67 @@ public class MetadataExtractorService {
         }
     }
 
-    // Extract text from PDF bytes using PDFBox
     private String extractTextFromPdfBytes(byte[] fileBytes) {
-        try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(fileBytes)) {
-            PDFTextStripper pdfStripper = new PDFTextStripper();
-            String text = pdfStripper.getText(document);
+        if (!PDFBOX_AVAILABLE) {
+            return "PDF text extraction not available on this platform";
+        }
+
+        Object document = null;
+        try {
+            Class<?> loaderClass = Class.forName("org.apache.pdfbox.Loader");
+            Method loadPdf = loaderClass.getMethod("loadPDF", byte[].class);
+            document = loadPdf.invoke(null, (Object) fileBytes);
+
+            Class<?> pdfDocClass = Class.forName("org.apache.pdfbox.pdmodel.PDDocument");
+            Class<?> stripperClass = Class.forName("org.apache.pdfbox.text.PDFTextStripper");
+            Object stripper = stripperClass.getDeclaredConstructor().newInstance();
+
+            Method getText = stripperClass.getMethod("getText", pdfDocClass);
+            String text = (String) getText.invoke(stripper, document);
             return text != null ? text.trim() : "";
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
             return "PDF Extraction Failed: " + e.getMessage();
+        } finally {
+            if (document != null) {
+                try {
+                    Method close = document.getClass().getMethod("close");
+                    close.invoke(document);
+                } catch (Exception ignored) {
+                    // no-op
+                }
+            }
         }
     }
 
-    // Check whether a PDF file contains digital signatures
     public boolean hasDigitalSignature(MultipartFile file) {
-        if (file.getContentType() != null && file.getContentType().equals("application/pdf")) {
-            try (PDDocument document = org.apache.pdfbox.Loader.loadPDF(file.getBytes())) {
-                return document.getSignatureDictionaries() != null && !document.getSignatureDictionaries().isEmpty();
-            } catch (IOException e) {
-                e.printStackTrace();
+        if (!PDFBOX_AVAILABLE) {
+            return false;
+        }
+
+        if (!"application/pdf".equals(file.getContentType())) {
+            return false;
+        }
+
+        Object document = null;
+        try {
+            Class<?> loaderClass = Class.forName("org.apache.pdfbox.Loader");
+            Method loadPdf = loaderClass.getMethod("loadPDF", byte[].class);
+            document = loadPdf.invoke(null, (Object) file.getBytes());
+
+            Method getSignatures = document.getClass().getMethod("getSignatureDictionaries");
+            Object signatures = getSignatures.invoke(document);
+            return signatures instanceof List<?> && !((List<?>) signatures).isEmpty();
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (document != null) {
+                try {
+                    Method close = document.getClass().getMethod("close");
+                    close.invoke(document);
+                } catch (Exception ignored) {
+                    // no-op
+                }
             }
         }
-        return false;
     }
 }

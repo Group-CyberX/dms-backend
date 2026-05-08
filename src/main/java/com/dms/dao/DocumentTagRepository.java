@@ -20,6 +20,8 @@ public interface DocumentTagRepository extends JpaRepository<DocumentTag, UUID> 
     // Find all tags associated with a specific document
     @Query("SELECT dt FROM DocumentTag dt WHERE dt.documentId = :documentId")
     List<DocumentTag> findByDocumentId(@Param("documentId") UUID documentId);
+
+    boolean existsByDocumentIdAndTagId(UUID documentId, UUID tagId);
     
     // Delete all tags associated with a specific document
     @Modifying
