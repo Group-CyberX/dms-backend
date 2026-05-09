@@ -34,18 +34,24 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select d from Documents d where d.document_id = :id and d.is_deleted = false")
     Optional<Documents> findActiveById(@Param("id") UUID id);
 
+    @Query("select d from Documents d where d.owner_id = :ownerId and d.is_deleted = false")
+    List<Documents> findByOwnerIdAndNotDeleted(@Param("ownerId") UUID ownerId);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
-    @Query("update Documents d set d.is_deleted = true where d.document_id = :id")
+    @Query("update Documents d set d.is_deleted = true, d.deleted_at = CURRENT_TIMESTAMP where d.document_id = :id")
     int softDeleteById(@Param("id") UUID id);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
-    @Query("update Documents d set d.is_deleted = false where d.document_id = :id")
+    @Query("update Documents d set d.is_deleted = false, d.deleted_at = null where d.document_id = :id")
     int restoreById(@Param("id") UUID id);
 
     @Query(value = "SELECT * FROM \"Document\" WHERE is_deleted = true", nativeQuery = true)
     List<Documents> findAllDeleted();
+
+    @Query("select d from Documents d where d.is_deleted = true and d.owner_id = :ownerId")
+    List<Documents> findAllDeletedByOwner(@Param("ownerId") UUID ownerId);
 
     // Search by tags - using native SQL
     @Query(value = """
@@ -71,4 +77,21 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
                    OR LOWER(t.tag_name) LIKE LOWER(CONCAT('%', ?1, '%')))
     """, nativeQuery = true)
     List<Documents> universalSearchIncludingTags(String searchTerm);
+
+    // Owner-scoped operations (do not change search behavior)
+    @Query("select d from Documents d where d.is_deleted = false and d.owner_id = :ownerId")
+    List<Documents> findAllActiveByOwner(@Param("ownerId") UUID ownerId);
+
+    @Query("select d from Documents d where d.document_id = :id and d.is_deleted = false and d.owner_id = :ownerId")
+    Optional<Documents> findActiveByIdAndOwner(@Param("id") UUID id, @Param("ownerId") UUID ownerId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update Documents d set d.is_deleted = true, d.deleted_at = CURRENT_TIMESTAMP where d.document_id = :id and d.owner_id = :ownerId")
+    int softDeleteByIdAndOwner(@Param("id") UUID id, @Param("ownerId") UUID ownerId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update Documents d set d.is_deleted = false, d.deleted_at = null where d.document_id = :id and d.owner_id = :ownerId")
+    int restoreByIdAndOwner(@Param("id") UUID id, @Param("ownerId") UUID ownerId);
 }

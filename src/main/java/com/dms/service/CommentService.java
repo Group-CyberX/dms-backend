@@ -22,11 +22,14 @@ public class CommentService {
     private final ShareAccessLogRepository logRepository;
     private final ShareLinkRepository shareLinkRepository;
 
+    // Add comment to shared document
     public Comment addComment(String token, UUID userId, String content) {
 
+        // Validate share link
         ShareLink link = shareLinkRepository.findByToken(token)
             .orElseThrow(() -> new RuntimeException("Invalid share link"));
 
+        // Check if comments are allowed
         if (!link.isAllowComments()) {
             throw new RuntimeException("Comments are not allowed");
         }
@@ -55,11 +58,13 @@ public class CommentService {
         return repository.save(comment);
     }
 
+    // Get all comments for a share link
     public List<Comment> getComments(String token) {
         return repository.findByTokenAndIsDeletedFalse(token);
     }
 
-        public Comment editComment(UUID commentId, UUID userId, String content) {
+    // Edit existing comment (only owner allowed)
+    public Comment editComment(UUID commentId, UUID userId, String content) {
 
         Comment comment = repository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
@@ -76,6 +81,7 @@ public class CommentService {
         return repository.save(comment);
     }
 
+    // Soft delete comment (only owner can delete)
     public void deleteComment(UUID commentId, UUID userId) {
 
         Comment comment = repository.findById(commentId)

@@ -5,13 +5,20 @@ import java.util.Map;
 public class LoginResponse {
 
     private final String email;
-    private final String token;
+    private final String accessToken;
+    private final String refreshToken;
     private final String role;
     private final Map<String, Boolean> permissions;
 
-    public LoginResponse(String email, String token, String role, Map<String, Boolean> permissions) {
+    public LoginResponse(String email,
+                         String accessToken,
+                         String refreshToken,
+                         String role,
+                         Map<String, Boolean> permissions) {
+
         this.email = email;
-        this.token = token;
+        this.accessToken = accessToken;
+        this.refreshToken = refreshToken;
         this.role = role;
         this.permissions = permissions;
     }
@@ -20,8 +27,12 @@ public class LoginResponse {
         return email;
     }
 
-    public String getToken() {
-        return token;
+    public String getAccessToken() {
+        return accessToken;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
     }
 
     public String getRole() {

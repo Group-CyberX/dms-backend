@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 import java.time.LocalDateTime;
 
+// Response returned to frontend after creating share link
 @Data
 @Builder
 public class ShareLinkResponse {

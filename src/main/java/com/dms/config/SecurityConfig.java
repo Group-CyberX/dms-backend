@@ -18,7 +18,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
 import java.util.Arrays;
 
 @Configuration
@@ -26,6 +25,7 @@ import java.util.Arrays;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    // Custom JWT filter to validate tokens in incoming requests
     private final JwtFilter jwtFilter;
 
     public SecurityConfig(JwtFilter jwtFilter) {
@@ -33,12 +33,33 @@ public class SecurityConfig {
     }
 
     @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "http://localhost:3001"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
         http
+                // Enable CORS for frontend-backend communication
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // Disable CSRF because we use stateless JWT authentication
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // Define authorization rules for endpoints
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
 
                         // Share links
@@ -51,35 +72,32 @@ public class SecurityConfig {
                         .requestMatchers("/api/comments/**").permitAll()
                         .requestMatchers("/api/notifications/**").authenticated()
 
-                        // Admin & User specific
-                        // CHANGED: Using /admin/logs/** allows both the main logs and /filter to work for both roles
-                        .requestMatchers("/admin/logs/**").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
+                        .requestMatchers("/admin/logs/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
 
-                        // General admin rules (Specific admin tasks)
-                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
+                        // User endpoints
+                        .requestMatchers("/user/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
 
-                        .requestMatchers("/user/**").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        // General admin rules
+                        .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
 
+                        // Strict Admin endpoints
+                        .requestMatchers("/admin/**").hasAuthority("SYSTEM_ADMIN")
+
+                        // Other APIs require authentication
                         .anyRequest().authenticated()
                 )
+                .formLogin(AbstractHttpConfigurer::disable)
+                .httpBasic(AbstractHttpConfigurer::disable)
+
+                // Add JWT filter before Spring's authentication filter
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Cache-Control"));
-        configuration.setAllowCredentials(true);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
-
+    // Password encoder using BCrypt hashing
     @Bean
     public PasswordEncoder passwordEncoder(){
         return new BCryptPasswordEncoder();

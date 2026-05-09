@@ -23,9 +23,8 @@ public class TagService {
         this.documentTagRepository = documentTagRepository;
     }
 
-    /**
-     * Get or create a tag by name
-     */
+    //Get or create a tag by name
+     
     public Tag getOrCreateTag(String tagName) {
         Optional<Tag> existing = tagRepository.findByTagNameIgnoreCase(tagName.trim());
         if (existing.isPresent()) {
@@ -36,9 +35,20 @@ public class TagService {
         return tagRepository.save(newTag);
     }
 
-    /**
-     * Save tags for a document
-     */
+    @Transactional
+    public Tag addTagToDocument(UUID documentId, String tagName) {
+        Tag tag = getOrCreateTag(tagName);
+
+        if (!documentTagRepository.existsByDocumentIdAndTagId(documentId, tag.getTag_id())) {
+            DocumentTag documentTag = new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id());
+            documentTagRepository.save(documentTag);
+        }
+
+        return tag;
+    }
+
+    //Save tags for a document
+     
     @Transactional
     public void saveTags(UUID documentId, String tagsString) {
         if (tagsString == null || tagsString.isBlank()) {
@@ -52,12 +62,11 @@ public class TagService {
         for (String tagName : tagNames) {
             String trimmedTag = tagName.trim();
             if (!trimmedTag.isEmpty()) {
-                // Get or create tag
                 Tag tag = getOrCreateTag(trimmedTag);
-                
-                // Create document-tag relationship
-                DocumentTag docTag = new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id());
-                documentTags.add(docTag);
+
+                if (!documentTagRepository.existsByDocumentIdAndTagId(documentId, tag.getTag_id())) {
+                    documentTags.add(new DocumentTag(UUID.randomUUID(), documentId, tag.getTag_id()));
+                }
             }
         }
 
@@ -66,9 +75,8 @@ public class TagService {
         }
     }
 
-    /**
-     * Get all tags for a document
-     */
+    //Get all tags for a document
+     
     public List<Tag> getTagsForDocument(UUID documentId) {
         List<DocumentTag> documentTags = documentTagRepository.findByDocumentId(documentId);
         List<Tag> tags = new ArrayList<>();
@@ -81,9 +89,8 @@ public class TagService {
         return tags;
     }
 
-    /**
-     * Delete all tags for a document
-     */
+    //Delete all tags for a document
+     
     @Transactional
     public void deleteTagsForDocument(UUID documentId) {
         documentTagRepository.deleteByDocumentId(documentId);

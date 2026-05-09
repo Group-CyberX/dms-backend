@@ -88,4 +88,14 @@ public class SearchController {
     public ResponseEntity<List<SearchHistoryResponseDTO>> getSearchHistory() {
         return ResponseEntity.ok(searchLogRepository.findSearchHistory());
     }
+
+    /**
+     * Clear Search History
+     * Usage: DELETE /api/search/history
+     */
+    @DeleteMapping("/history")
+    public ResponseEntity<Void> clearSearchHistory() {
+        searchLogRepository.deleteAll();
+        return ResponseEntity.noContent().build();
+    }
 }

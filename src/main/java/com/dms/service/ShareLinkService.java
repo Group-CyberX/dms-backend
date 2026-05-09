@@ -36,19 +36,22 @@ public class ShareLinkService {
     // Creates a secure share link for a document
     public ShareLinkResponse createShareLink(CreateShareLinkRequest request, UUID userId) {
 
+        // Generate unique token for the share link
         String token = UUID.randomUUID().toString().replace("-", "");
 
+        // Calculate expiry date if expiry days provided
         LocalDateTime expiryDate = null;
         if (request.getExpiryDays() > 0) {
         expiryDate = LocalDateTime.now().plusDays(request.getExpiryDays());
         }
 
-        
+        // Hash password if provided
         String hashedPassword = null;
         if (request.getPassword() != null && !request.getPassword().isEmpty()) {
             hashedPassword = passwordEncoder.encode(request.getPassword());
         }
 
+        // Create and save share link entity
         ShareLink shareLink = ShareLink.builder()
                 .documentId(request.getDocumentId())
                 .token(token)
@@ -64,6 +67,7 @@ public class ShareLinkService {
 
         repository.save(shareLink);
 
+        // Return response with share link details
         return ShareLinkResponse.builder()
                 .url(frontendUrl + "/share/" + token)
                 .expiresAt(expiryDate)
@@ -79,8 +83,10 @@ public class ShareLinkService {
 
     // Validates a share link
     public ShareLink validateLink(String token, String password) {
+
         ShareLink link = getByToken(token);
 
+        // Check if link is active
         if (!link.isActive()) {
             throw new RuntimeException("Link is revoked");
         }
@@ -145,6 +151,7 @@ public class ShareLinkService {
 
         accessLogRepository.save(log);
 
+        // Return access details
         return Map.of(
                 "documentId", link.getDocumentId(),
                 "documentName", doc != null ? doc.getTitle() : "Document",
@@ -153,6 +160,7 @@ public class ShareLinkService {
         );
     }
 
+    // Download document through share link
     public ResponseEntity<byte[]> downloadFile(
         String token,
         String password,
