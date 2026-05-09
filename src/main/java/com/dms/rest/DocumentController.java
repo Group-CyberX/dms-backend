@@ -7,14 +7,17 @@ import com.dms.dto.DocumentUploadResponse;
 import com.dms.dto.UploadDocumentRequest;
 import com.dms.models.Documents;
 import com.dms.models.User;
+import com.dms.service.AuditLogService;
 import com.dms.service.DocumentUploadService;
+import com.dms.service.NotificationService;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.net.URI;
 import java.time.LocalDateTime;
@@ -29,106 +32,110 @@ public class DocumentController {
 
     private final DocumentRepository documentRepository;
     private final DocumentUploadService documentUploadService;
+    private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
     private final UserRepository userRepository;
 
-    public DocumentController(DocumentRepository documentRepository, DocumentUploadService documentUploadService, UserRepository userRepository) {
+    public DocumentController(DocumentRepository documentRepository,
+                              DocumentUploadService documentUploadService,
+                              AuditLogService auditLogService,
+                              NotificationService notificationService,
+                              UserRepository userRepository) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
+        this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
         this.userRepository = userRepository;
     }
 
     @GetMapping
     public List<DocumentResponse> getAll(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
 
-    if (auth == null || !auth.isAuthenticated()) {
-        throw new RuntimeException("User not authenticated");
+        return documentRepository.findAllActiveByOwner(
+                        com.dms.security.SecurityUtils.currentUserId())
+                .stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 
-    return documentRepository.findAllActiveByOwner(
-                    com.dms.security.SecurityUtils.currentUserId()
-            )
-            .stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
-}
+    private DocumentResponse convertToDTO(Documents doc) {
+        String ownerName = "Unknown";
 
-//Convert Documents entity to DocumentResponse with owner name
-
-private DocumentResponse convertToDTO(Documents doc) {
-
-    String ownerName = "Unknown";
-
-    if (doc.getOwner_id() != null) {
-
-        if (doc.getOwner_id().toString()
-                .equals("00000000-0000-0000-0000-000000000000")) {
-
-            ownerName = "System";
-
-        } else {
-
-            Optional<User> owner = userRepository.findById(doc.getOwner_id());
-
-            if (owner.isPresent()) {
-                ownerName = owner.get().getUsername();
+        if (doc.getOwner_id() != null) {
+            if (doc.getOwner_id().toString().equals("00000000-0000-0000-0000-000000000000")) {
+                ownerName = "System";
+            } else {
+                Optional<User> owner = userRepository.findById(doc.getOwner_id());
+                if (owner.isPresent()) {
+                    ownerName = owner.get().getUsername();
+                }
             }
         }
-    }
 
-    return new DocumentResponse(
-            doc.getDocument_id(),
-            doc.getTitle(),
-            doc.getOwner_id(),
-            ownerName,
-            doc.getFolder_id(),
-            doc.getCurrent_version_id(),
-            doc.getCreated_at(),
-            doc.getDeleted_at(),
-            doc.getFile_size(),
-            doc.isIs_locked(),
-            doc.isIs_deleted()
-    );
-}
-
-    @GetMapping("/{id}")
-    public ResponseEntity<DocumentResponse> getById(@PathVariable("id") UUID id) {
-        return documentRepository.findActiveByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId())
-                .map(doc -> ResponseEntity.ok(convertToDTO(doc)))
-                .orElse(ResponseEntity.notFound().build());
-    }
-
-    @GetMapping("/trash")
-public List<DocumentResponse> getDeleted(Authentication auth) {
-
-    if (auth == null || !auth.isAuthenticated()) {
-        throw new ResponseStatusException(
-                HttpStatus.UNAUTHORIZED,
-                "User not authenticated"
+        return new DocumentResponse(
+                doc.getDocument_id(),
+                doc.getTitle(),
+                doc.getOwner_id(),
+                ownerName,
+                doc.getFolder_id(),
+                doc.getCurrent_version_id(),
+                doc.getCreated_at(),
+                doc.getDeleted_at(),
+                doc.getFile_size(),
+                doc.isIs_locked(),
+                doc.isIs_deleted()
         );
     }
 
-    return documentRepository.findAllDeletedByOwner(
-                    com.dms.security.SecurityUtils.currentUserId()
-            )
-            .stream()
-            .map(this::convertToDTO)
-            .collect(Collectors.toList());
-}
+    @GetMapping("/{id}")
+    public ResponseEntity<DocumentResponse> getById(@PathVariable("id") UUID id,
+                                                    HttpServletRequest request) {
+        Optional<Documents> doc = documentRepository.findActiveById(id);
+        String ip = getClientIp(request);
+
+        if (doc.isPresent()) {
+            auditLogService.createAuditLog("DOCUMENT_VIEWED", id, ip, "SUCCESS");
+            return ResponseEntity.ok(convertToDTO(doc.get()));
+        } else {
+            auditLogService.createAuditLog("DOCUMENT_VIEWED", id, ip, "FAILED");
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/trash")
+    public List<DocumentResponse> getDeleted(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        return documentRepository.findAllDeletedByOwner(
+                        com.dms.security.SecurityUtils.currentUserId())
+                .stream()
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
+    }
 
     @PostMapping
-    public ResponseEntity<DocumentResponse> create(@RequestBody Documents doc) {
+    public ResponseEntity<DocumentResponse> create(@RequestBody Documents doc,
+                                                   HttpServletRequest request) {
         if (doc.getDocument_id() == null) {
             doc.setDocument_id(UUID.randomUUID());
         }
         if (doc.getCreated_at() == null) {
             doc.setCreated_at(LocalDateTime.now());
         }
-        // Ensure new documents are not created as deleted inadvertently
         doc.setIs_deleted(false);
-        // Force owner to current user regardless of payload
         doc.setOwner_id(com.dms.security.SecurityUtils.currentUserId());
+
         Documents saved = documentRepository.save(doc);
-        return ResponseEntity.created(URI.create("/api/documents/" + saved.getDocument_id())).body(convertToDTO(saved));
+        String ip = getClientIp(request);
+        auditLogService.createAuditLog("DOCUMENT_CREATED", saved.getDocument_id(), ip, "SUCCESS");
+
+        return ResponseEntity.created(URI.create("/api/documents/" + saved.getDocument_id()))
+                .body(convertToDTO(saved));
     }
 
     @PostMapping("/upload")
@@ -139,70 +146,129 @@ public List<DocumentResponse> getDeleted(Authentication auth) {
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "tags", required = false) String tags,
             @RequestParam(value = "description", required = false) String description,
-            Authentication auth) {
+            Authentication auth,
+            HttpServletRequest request) {
+
+        if (auth == null || !auth.isAuthenticated()) {
+            DocumentUploadResponse errorResponse = new DocumentUploadResponse(
+                    null, null, null, file != null ? file.getOriginalFilename() : null,
+                    "User not authenticated", false);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponse);
+        }
+
+        String email = auth.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
+        String ip = getClientIp(request);
+
         try {
-            if (auth == null || !auth.isAuthenticated()) {
-                DocumentUploadResponse errorResponse = new DocumentUploadResponse(
-                        null, null, null, file.getOriginalFilename(), "User not authenticated", false
-                );
-                return ResponseEntity.badRequest().body(errorResponse);
-            }
-            
-            String email = auth.getName();
-            User user = userRepository.findByEmail(email)
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            UploadDocumentRequest request = new UploadDocumentRequest(title, folderId, category, tags, description);
-            DocumentUploadResponse response = documentUploadService.uploadDocument(file, request, user.getUserId());
+            UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
+            DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq, user.getUserId());
+
             if (!response.isSuccess()) {
+                auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
+                notificationService.sendNotification(testUserId, "Failed: " + response.getMessage());
                 return ResponseEntity.badRequest().body(response);
             }
-          
+
+            auditLogService.createAuditLog("DOCUMENT_UPLOAD", response.getDocumentId(), ip, "SUCCESS");
+            notificationService.sendNotification(testUserId, "Document '" + title + "' uploaded successfully");
+
             return ResponseEntity.ok(response);
         } catch (IOException e) {
+            auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
+            notificationService.sendNotification(testUserId, "Upload failed due to system error");
+
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
-                    null, null, null, file.getOriginalFilename(), "Upload failed: " + e.getMessage(), false
-            );
+                    null, null, null, "Upload failed: " + e.getMessage(), false);
             return ResponseEntity.badRequest().body(errorResponse);
         }
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<DocumentResponse> update(@PathVariable("id") UUID id, @RequestBody Documents update) {
+    public ResponseEntity<DocumentResponse> update(@PathVariable("id") UUID id,
+                                                   @RequestBody Documents update,
+                                                   HttpServletRequest request) {
         UUID userId = com.dms.security.SecurityUtils.currentUserId();
         Optional<Documents> existingOpt = documentRepository.findActiveByIdAndOwner(id, userId);
+        String ip = getClientIp(request);
+
         if (existingOpt.isEmpty()) {
+            auditLogService.createAuditLog("DOCUMENT_EDITED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
+
         Documents existing = existingOpt.get();
-        // Update mutable fields (do not allow toggling is_deleted here and do not allow changing owner)
         existing.setTitle(update.getTitle());
         existing.setFolder_id(update.getFolder_id());
         existing.setCurrent_version_id(update.getCurrent_version_id());
         existing.setIs_locked(update.isIs_locked());
+
         if (update.getCreated_at() != null) {
             existing.setCreated_at(update.getCreated_at());
         }
+
         Documents saved = documentRepository.save(existing);
+        auditLogService.createAuditLog("DOCUMENT_EDITED", id, ip, "SUCCESS");
+        notificationService.sendInternalSystemNotification("Document " + saved.getTitle() + " modified");
+
         return ResponseEntity.ok(convertToDTO(saved));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
-        // Soft delete: mark as deleted without removing S3 files, only if owned by current user
+    public ResponseEntity<Void> delete(@PathVariable("id") UUID id,
+                                       HttpServletRequest request) {
+        String ip = getClientIp(request);
         int updated = documentRepository.softDeleteByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+
         if (updated == 0) {
+            auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
+
+        auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "SUCCESS");
+        notificationService.sendInternalSystemNotification("Document deleted");
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/restore")
-    public ResponseEntity<Void> restore(@PathVariable("id") UUID id) {
+    public ResponseEntity<Void> restore(@PathVariable("id") UUID id,
+                                        HttpServletRequest request) {
+        String ip = getClientIp(request);
         int updated = documentRepository.restoreByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+
         if (updated == 0) {
+            auditLogService.createAuditLog("DOCUMENT_RESTORED", id, ip, "FAILED");
             return ResponseEntity.notFound().build();
         }
+
+        auditLogService.createAuditLog("DOCUMENT_RESTORED", id, ip, "SUCCESS");
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/approve")
+    public ResponseEntity<DocumentResponse> approveDocument(@PathVariable("id") UUID id,
+                                                            HttpServletRequest request) {
+        Optional<Documents> docOpt = documentRepository.findById(id);
+        String ip = getClientIp(request);
+
+        if (docOpt.isEmpty()) {
+            auditLogService.createAuditLog("DOCUMENT_APPROVED", id, ip, "FAILED");
+            return ResponseEntity.notFound().build();
+        }
+
+        Documents doc = docOpt.get();
+        documentRepository.save(doc);
+        auditLogService.createAuditLog("DOCUMENT_APPROVED", id, ip, "SUCCESS");
+        notificationService.sendInternalSystemNotification("Document approved: " + doc.getTitle());
+
+        return ResponseEntity.ok(convertToDTO(doc));
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        return (ip == null || ip.isEmpty()) ? request.getRemoteAddr() : ip;
     }
 }

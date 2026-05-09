@@ -9,9 +9,9 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -55,28 +55,35 @@ public class SecurityConfig {
 
                 // Disable CSRF because we use stateless JWT authentication
                 .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 // Define authorization rules for endpoints
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints - no authentication required
+                        // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
 
-                        // Share links: POST requires auth, access is public, GET is public, DELETE requires auth
+                        // Share links
                         .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/api/share-links/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
 
-                        // Comments: public read/write for shared documents
-                        .requestMatchers("/api/comments/**").permitAll()
+                        // Comments & Notifications
+                        .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
+                        .requestMatchers("/api/comments/**").authenticated()
 
-                        // Approver endpoints: allow listing approvers publicly, but require auth for current user
+                        // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
+                        .requestMatchers("/admin/logs/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
+
+                        // User endpoints
+                        .requestMatchers("/user/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
+
+                        // General admin rules
                         .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
 
-                        // Admin endpoints
-                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
-                        .requestMatchers("/user/").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        // Strict Admin endpoints
+                        .requestMatchers("/admin/**").hasAuthority("SYSTEM_ADMIN")
 
                         // Other APIs require authentication
                         .anyRequest().authenticated()

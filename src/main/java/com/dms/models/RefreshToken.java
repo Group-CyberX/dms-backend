@@ -53,4 +53,15 @@ public class RefreshToken {
         return revoked;
     }
 
+    public void setToken(String token) {
+        this.token = token;
+    }
+
+    public void setUser(User user) {
+        this.user = user;
+    }
+
+    public void setRevoked(boolean revoked) {
+        this.revoked = revoked;
+    }
 }

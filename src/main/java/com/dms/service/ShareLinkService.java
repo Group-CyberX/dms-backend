@@ -30,7 +30,7 @@ public class ShareLinkService {
     private final ShareAccessLogRepository accessLogRepository;
     private final DocumentRepository documentRepository;
 
-    @Value("${app.frontend.url}")
+    @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
 
     // Creates a secure share link for a document

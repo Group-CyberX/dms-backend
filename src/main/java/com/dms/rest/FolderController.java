@@ -4,6 +4,9 @@ import com.dms.dao.FolderRepository;
 import com.dms.models.Folders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.dms.models.AuditLog;
+import com.dms.service.AuditLogService;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.URI;
 import java.util.List;
@@ -15,9 +18,11 @@ import java.util.UUID;
 public class FolderController {
 
     private final FolderRepository folderRepository;
+    private final AuditLogService auditLogService;
 
-    public FolderController(FolderRepository folderRepository) {
+    public FolderController(FolderRepository folderRepository,AuditLogService auditLogService) {
         this.folderRepository = folderRepository;
+        this.auditLogService = auditLogService;
     }
 
     @GetMapping
@@ -62,5 +67,14 @@ public class FolderController {
         }
         folderRepository.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+    // helper method
+    private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
+        AuditLog log = new AuditLog();
+        log.setAction(action);
+        log.setEntity_id(entityId);
+        log.setIp(request.getRemoteAddr());
+        log.setStatus(status);
+        auditLogService.saveLog(log);
     }
 }
