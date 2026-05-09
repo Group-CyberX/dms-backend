@@ -73,17 +73,17 @@ public class SecurityConfig {
                         .requestMatchers("/api/comments/**").authenticated()
 
                         // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
-                        .requestMatchers("/admin/logs/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
+                        .requestMatchers("/admin/logs/**").hasAnyRole("USER", "SYSTEM_ADMIN")
 
                         // User endpoints
-                        .requestMatchers("/user/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
+                        .requestMatchers("/user/**").hasAnyRole("USER", "SYSTEM_ADMIN")
 
                         // General admin rules
                         .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
 
                         // Strict Admin endpoints
-                        .requestMatchers("/admin/**").hasAuthority("SYSTEM_ADMIN")
+                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
 
                         // Other APIs require authentication
                         .anyRequest().authenticated()

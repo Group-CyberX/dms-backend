@@ -11,6 +11,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/search")
@@ -97,5 +99,95 @@ public class SearchController {
     public ResponseEntity<Void> clearSearchHistory() {
         searchLogRepository.deleteAll();
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Get all available filter options for search dropdowns
+     * Usage: GET /api/search/options
+     */
+    @GetMapping("/options")
+    public ResponseEntity<Map<String, List<String>>> getFilterOptions() {
+        Map<String, List<String>> options = new HashMap<>();
+        
+        // Document types
+        options.put("documentTypes", List.of(
+            "Invoice",
+            "Contract",
+            "Report",
+            "Memo",
+            "Email",
+            "Proposal",
+            "Agreement",
+            "Other"
+        ));
+        
+        // Document statuses
+        options.put("statuses", List.of(
+            "Draft",
+            "Pending",
+            "Approved",
+            "Rejected",
+            "Archived",
+            "Active"
+        ));
+        
+        // Owner filters
+        options.put("owners", List.of(
+            "Me",
+            "Team",
+            "Organization",
+            "Shared with Me"
+        ));
+        
+        // Signature statuses
+        options.put("signatureStatuses", List.of(
+            "Unsigned",
+            "Pending Signature",
+            "Signed",
+            "Rejected"
+        ));
+        
+        // Date range options
+        options.put("dateRanges", List.of(
+            "Last 7 Days",
+            "Last 30 Days",
+            "Last 90 Days",
+            "This Year",
+            "Custom Range"
+        ));
+        
+        return ResponseEntity.ok(options);
+    }
+
+    /**
+     * Get specific filter options by name
+     * Usage: GET /api/search/options/{filterName}
+     */
+    @GetMapping("/options/{filterName}")
+    public ResponseEntity<List<String>> getFilterOptionsByName(@PathVariable String filterName) {
+        Map<String, List<String>> allOptions = new HashMap<>();
+        
+        allOptions.put("documentTypes", List.of(
+            "Invoice", "Contract", "Report", "Memo", "Email", "Proposal", "Agreement", "Other"
+        ));
+        allOptions.put("statuses", List.of(
+            "Draft", "Pending", "Approved", "Rejected", "Archived", "Active"
+        ));
+        allOptions.put("owners", List.of(
+            "Me", "Team", "Organization", "Shared with Me"
+        ));
+        allOptions.put("signatureStatuses", List.of(
+            "Unsigned", "Pending Signature", "Signed", "Rejected"
+        ));
+        allOptions.put("dateRanges", List.of(
+            "Last 7 Days", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"
+        ));
+        
+        List<String> options = allOptions.getOrDefault(filterName, List.of());
+        if (options.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        return ResponseEntity.ok(options);
     }
 }

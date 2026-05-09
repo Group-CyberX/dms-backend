@@ -159,8 +159,6 @@ public class DocumentController {
         String email = auth.getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-
-        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
         String ip = getClientIp(request);
 
         try {
@@ -169,17 +167,17 @@ public class DocumentController {
 
             if (!response.isSuccess()) {
                 auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
-                notificationService.sendNotification(testUserId, "Failed: " + response.getMessage());
+                notificationService.sendNotification(user.getUserId(), "Failed: " + response.getMessage());
                 return ResponseEntity.badRequest().body(response);
             }
 
             auditLogService.createAuditLog("DOCUMENT_UPLOAD", response.getDocumentId(), ip, "SUCCESS");
-            notificationService.sendNotification(testUserId, "Document '" + title + "' uploaded successfully");
+            notificationService.sendNotification(user.getUserId(), "Document '" + title + "' uploaded successfully");
 
             return ResponseEntity.ok(response);
         } catch (IOException e) {
             auditLogService.createAuditLog("DOCUMENT_UPLOAD", null, ip, "FAILED");
-            notificationService.sendNotification(testUserId, "Upload failed due to system error");
+            notificationService.sendNotification(user.getUserId(), "Upload failed due to system error");
 
             DocumentUploadResponse errorResponse = new DocumentUploadResponse(
                     null, null, null, "Upload failed: " + e.getMessage(), false);
