@@ -69,8 +69,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
 
                         // Comments & Notifications
-                        .requestMatchers("/api/comments/**").permitAll()
-                        .requestMatchers("/api/notifications/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
+                        .requestMatchers("/api/comments/**").authenticated()
 
                         // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
                         .requestMatchers("/admin/logs/**").hasAnyAuthority("USER", "SYSTEM_ADMIN")
