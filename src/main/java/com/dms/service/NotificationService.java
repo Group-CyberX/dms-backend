@@ -2,6 +2,7 @@ package com.dms.service;
 
 import com.dms.dao.NotificationRepository;
 import com.dms.models.Notification;
+import com.dms.security.SecurityUtils;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
@@ -49,11 +50,7 @@ public class NotificationService {
     }
 
     public void sendInternalSystemNotification(String message) {
-        // This centralizes your test/admin ID
-        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
-
-        // Reuse your existing logic to determine title and save
-        sendNotification(testUserId, message);
+        sendNotification(SecurityUtils.currentUserId(), message);
     }
 
     public List<Notification> getUserNotifications(UUID userId) {

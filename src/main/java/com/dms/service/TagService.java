@@ -23,6 +23,11 @@ public class TagService {
         this.documentTagRepository = documentTagRepository;
     }
 
+    //Get all available tags (for dropdown/autocomplete)
+    public List<Tag> getAllTags() {
+        return tagRepository.findAll();
+    }
+
     //Get or create a tag by name
      
     public Tag getOrCreateTag(String tagName) {

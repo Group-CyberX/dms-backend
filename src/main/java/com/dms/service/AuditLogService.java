@@ -2,6 +2,7 @@ package com.dms.service;
 
 import com.dms.dao.AuditLogRepository;
 import com.dms.models.AuditLog;
+import com.dms.security.SecurityUtils;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -32,9 +33,7 @@ public class AuditLogService {
         log.setStatus(status);
         log.setTimestamp(LocalDateTime.now());
 
-        // Use your test UUID or fetch from SecurityContext
-        UUID testUserId = UUID.fromString("0b0f8543-672e-4a5a-bb8d-99da74f94f90");
-        log.setUser_id(testUserId);
+        log.setUser_id(SecurityUtils.currentUserId());
 
         auditLogRepository.save(log);
     }

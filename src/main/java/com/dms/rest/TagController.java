@@ -21,6 +21,16 @@ public class TagController {
         this.tagService = tagService;
     }
 
+    //Get all available tags (for dropdown/autocomplete)
+    @GetMapping
+    public ResponseEntity<List<TagDTO>> getAllTags() {
+        List<Tag> tags = tagService.getAllTags();
+        List<TagDTO> tagDTOs = tags.stream()
+                .map(t -> new TagDTO(t.getTag_id(), t.getTag_name()))
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(tagDTOs);
+    }
+
     //Get all tags for a document 
     @GetMapping("/document/{documentId}")
     public ResponseEntity<List<TagDTO>> getTagsForDocument(@PathVariable("documentId") UUID documentId) {
