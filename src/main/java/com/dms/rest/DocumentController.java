@@ -9,9 +9,11 @@ import com.dms.models.Documents;
 import com.dms.models.User;
 import com.dms.service.DocumentUploadService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.net.URI;
@@ -33,7 +35,9 @@ public class DocumentController {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.userRepository = userRepository;
-@GetMapping
+    }
+
+    @GetMapping
 public List<DocumentResponse> getAll(Authentication auth) {
 
     if (auth == null || !auth.isAuthenticated()) {
