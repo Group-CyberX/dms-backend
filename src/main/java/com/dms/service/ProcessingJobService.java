@@ -96,8 +96,10 @@ public class ProcessingJobService {
             // Mark job as SUCCESS
             job.setStatus("SUCCESS");
 
-        } catch (Exception e) {
+        } catch (Throwable t) {
             job.setStatus("FAILED");
+            t.printStackTrace();
+            System.err.println("OCR Job Failed for Job ID: " + jobId + " Error: " + t.getMessage());
             // optionally log or store the error message in the job entity
         } finally {
             processingJobRepository.save(job);
@@ -110,6 +112,9 @@ public class ProcessingJobService {
     public List<ProcessingJob> getJobsForDocument(UUID documentId) {
         List<DocumentVersions> versions = documentVersionRepository.findByDocument_idOrderByCreated_atDesc(documentId);
         List<UUID> versionIds = versions.stream().map(DocumentVersions::getVersion_id).toList();
+        if (versionIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
         return processingJobRepository.findByDocumentVersionIdIn(versionIds);
     }
 }

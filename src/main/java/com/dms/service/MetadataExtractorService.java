@@ -74,8 +74,10 @@ public class MetadataExtractorService {
             Method doOcr = tesseractClass.getMethod("doOCR", File.class);
             String result = (String) doOcr.invoke(tesseract, tempFile);
             return result != null ? result.trim() : "";
-        } catch (Exception e) {
-            return "OCR Processing Failed: " + e.getMessage();
+        } catch (Throwable t) {
+            System.err.println("OCR Error: " + t.getMessage());
+            t.printStackTrace();
+            return "OCR Processing Failed: " + t.getMessage();
         } finally {
             if (tempFile != null && tempFile.exists()) {
                 tempFile.delete();

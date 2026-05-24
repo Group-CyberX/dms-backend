@@ -29,12 +29,13 @@ public class GlobalExceptionHandler {
     }
 
     // general runtime errors
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<?> handleRuntimeException(RuntimeException ex) {
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<?> handleException(Exception ex) {
+        ex.printStackTrace(); // ADDED LOG FOR EVERYTHING
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", ex.getMessage());
 
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 }

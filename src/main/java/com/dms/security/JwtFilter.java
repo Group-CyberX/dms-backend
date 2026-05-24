@@ -40,8 +40,14 @@ public class JwtFilter extends OncePerRequestFilter {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring(7);
 
-            // Extract user email from JWT
-            email = jwtUtil.extractEmail(token);
+            try {
+                // Extract user email from JWT
+                email = jwtUtil.extractEmail(token);
+            } catch (io.jsonwebtoken.ExpiredJwtException e) {
+                logger.warn("JWT token is expired: " + e.getMessage());
+            } catch (Exception e) {
+                logger.warn("Invalid JWT token: " + e.getMessage());
+            }
         }
 
         // Authenticate user if not already authenticated

@@ -6,11 +6,14 @@ import com.dms.dto.SearchResponseDTO;
 import com.dms.models.Documents;
 import com.dms.models.DocumentMetadata;
 import com.dms.models.Tag;
+import com.dms.dao.UserRepository;
+import com.dms.models.User;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -20,10 +23,12 @@ public class SearchService {
 
     private final DocumentRepository documentRepository;
     private final TagService tagService;
+    private final UserRepository userRepository;
 
-    public SearchService(DocumentRepository documentRepository, TagService tagService) {
+    public SearchService(DocumentRepository documentRepository, TagService tagService, UserRepository userRepository) {
         this.documentRepository = documentRepository;
         this.tagService = tagService;
+        this.userRepository = userRepository;
     }
 
     private SearchResponseDTO mapToDTO(Documents doc) {
@@ -43,13 +48,26 @@ public class SearchService {
                     (v1, v2) -> v1 // In case of duplicate keys
                 ));
             dto.setMetadata(metaMap);
-            dto.setOwner(metaMap.getOrDefault("owner", "Unknown"));
             dto.setStatus(metaMap.getOrDefault("status", "Unknown"));
             dto.setDescription(metaMap.getOrDefault("description", ""));
         } else {
-            dto.setOwner("Unknown");
             dto.setStatus("Unknown");
             dto.setDescription("");
+        }
+        
+        // Fetch and map owner from user table
+        if (doc.getOwner_id() != null) {
+            userRepository.findById(doc.getOwner_id()).ifPresentOrElse(user -> {
+                Map<String, String> ownerData = new HashMap<>();
+                ownerData.put("id", user.getUserId().toString());
+                ownerData.put("name", user.getUsername());
+                ownerData.put("email", user.getEmail());
+                dto.setOwner(ownerData);
+            }, () -> {
+                dto.setOwner("Unknown");
+            });
+        } else {
+            dto.setOwner("Unknown");
         }
 
         // Fetch and map tags
@@ -99,7 +117,7 @@ public class SearchService {
                 .filter(doc -> matchesMetadata(doc, "documentType", filters.getDocumentType()))
                 .filter(doc -> matchesMetadata(doc, "status", filters.getStatus()))
                 .filter(doc -> matchesMetadata(doc, "signatureStatus", filters.getSignatureStatus()))
-                .filter(doc -> matchesMetadata(doc, "owner", filters.getOwner()))
+                .filter(doc -> matchesOwner(doc, filters.getOwner()))
                 .filter(doc -> matchesDateRange(doc, filters.getDateRange()))
                 .filter(doc -> matchesTags(doc, filters.getTags()))
                 .map(this::mapToDTO)
@@ -117,6 +135,20 @@ public class SearchService {
         return doc.getMetadata().stream()
                 .anyMatch(m -> m.getKey().equalsIgnoreCase(metaKey) && 
                                m.getValue().equalsIgnoreCase(filterValue));
+    }
+
+    private boolean matchesOwner(Documents doc, String filterValue) {
+        if (filterValue == null || filterValue.trim().isEmpty() || filterValue.startsWith("Any")) {
+            return true;
+        }
+        if (doc.getOwner_id() == null) {
+            return filterValue.equalsIgnoreCase("Unknown");
+        }
+        User user = userRepository.findById(doc.getOwner_id()).orElse(null);
+        if (user == null) {
+            return filterValue.equalsIgnoreCase("Unknown");
+        }
+        return user.getUsername().equalsIgnoreCase(filterValue);
     }
 
     private boolean matchesDateRange(Documents doc, String dateRange) {
