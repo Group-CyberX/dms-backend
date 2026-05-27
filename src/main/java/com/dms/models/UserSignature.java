@@ -19,6 +19,8 @@ public class UserSignature {
     @Column(name = "signature_type", length = 20, nullable = false)
     private String signatureType;
 
+    // Update this field in your UserSignature.java file
+    @Lob
     @Column(name = "signature_image", columnDefinition = "bytea")
     private byte[] signatureImage;
 

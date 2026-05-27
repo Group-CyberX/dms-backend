@@ -31,6 +31,7 @@ public class DigitalSignature {
     @Column(name = "algorithm", length = 50)
     private String algorithm;
 
+    @Lob
     @Column(name = "tsa_token",columnDefinition = "bytea")
     private byte[] tsaToken;
 
