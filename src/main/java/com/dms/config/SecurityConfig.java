@@ -62,6 +62,9 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
 
+                        //TO MAKE SIGNATURE ENDPOINTS PUBLIC FOR TESTING
+                        .requestMatchers("/api/signatures/**").permitAll()
+
                         // Share links
                         .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll()
