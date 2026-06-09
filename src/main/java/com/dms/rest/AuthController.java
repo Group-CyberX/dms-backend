@@ -4,10 +4,8 @@ import com.dms.dto.*;
 import com.dms.service.AuthService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
 
 // Controller responsible for handling authentication-related API requests
 @RestController
@@ -56,6 +54,13 @@ public class AuthController {
     authService.resetPassword(request.getToken(), request.getNewPassword());
 
     return "Password reset successful";
+    }
+
+    // Validate reset token and return expiry info for frontend countdown
+    @GetMapping("/validate-token")
+    public ResponseEntity<ValidateTokenResponse> validateToken(@RequestParam String token) {
+        ValidateTokenResponse response = authService.validateResetToken(token);
+        return ResponseEntity.ok(response);
     }
 
     // Generate a new access token using a refresh token
