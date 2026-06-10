@@ -3,6 +3,7 @@ package com.dms.rest;
 import com.dms.models.AuditLog;
 import com.dms.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -20,12 +21,14 @@ public class AdminAuditController {
 
     //Returns the full list of all activities in the system
     @GetMapping("/logs")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
     public List<AuditLog> getAllLogs(){
         return auditLogService.getAllLogs();
     }
 
     // The Filter Endpoint
     @GetMapping("/logs/filter")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
     public List<AuditLog> getFilteredLogs(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String action,
@@ -50,6 +53,7 @@ public class AdminAuditController {
 
     //Allows other parts of the system to programmatically record a new event
     @PostMapping("/logs")
+    @PreAuthorize("isAuthenticated()")
     public AuditLog newLog(@RequestBody AuditLog auditLog, HttpServletRequest request){
         auditLog.setIp(request.getRemoteAddr());
         if (auditLog.getStatus() == null || auditLog.getStatus().isEmpty()){

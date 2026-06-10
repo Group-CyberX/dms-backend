@@ -23,7 +23,7 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewUser')")
     public List<User> getAllUsers() {
         return userService.getAllUsers();
     }
@@ -40,7 +40,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditUser')")
     public User updateUser(@PathVariable UUID id,
                            @RequestBody UpdateUserRequest request) {
         return userService.updateUser(
@@ -51,7 +51,7 @@ public class UserController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditUser')")
     public User updateStatus(@PathVariable UUID id,
                              @RequestBody UpdateStatusRequest request) {
         return userService.updateUserStatus(

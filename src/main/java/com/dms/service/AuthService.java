@@ -101,6 +101,7 @@ public class AuthService {
         //Return full response
         return new LoginResponse(
                 user.getEmail(),
+                user.getUsername(),
                 accessToken,
                 refreshToken,
                 roleName,
@@ -224,6 +225,7 @@ public class AuthService {
 
         return new LoginResponse(
                 user.getEmail(),
+                user.getUsername(),
                 newAccessToken,
                 newRefreshToken,
                 roleName,
