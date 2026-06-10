@@ -84,6 +84,10 @@ public class AuthService {
                 user.getRole().getName()
         );
 
+        // Update last login
+        user.setLastLogin(LocalDateTime.now());
+        userRepository.save(user);
+
         // Generate refresh token
         String refreshToken = createRefreshToken(user);
 

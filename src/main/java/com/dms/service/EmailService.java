@@ -36,4 +36,20 @@ public class EmailService {
             throw new RuntimeException("Failed to send password reset email: " + e.getMessage());
         }
     }
+
+    public void sendOtpEmail(String toEmail, String otp) {
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject("Your Verification Code");
+            message.setText("Your one-time password (OTP) is: " + otp + "\n\n"
+                    + "This code is valid for 15 minutes.\n\n"
+                    + "If you did not request this change, please ignore this email.");
+
+            mailSender.send(message);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to send OTP email: " + e.getMessage());
+        }
+    }
 }

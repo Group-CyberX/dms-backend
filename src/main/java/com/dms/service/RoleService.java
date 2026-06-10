@@ -46,4 +46,12 @@ public class RoleService {
 
         return roleRepository.save(role);
     }
+
+    // Delete role
+    public void deleteRole(UUID roleId) {
+        if (!roleRepository.existsById(roleId)) {
+            throw new RuntimeException("Role not found");
+        }
+        roleRepository.deleteById(roleId);
+    }
 }
