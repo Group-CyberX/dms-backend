@@ -23,6 +23,11 @@ public class MetadataExtractorService {
         }
     }
 
+    static {
+        // Force JNA to look in Homebrew's lib folder for Tesseract on Apple Silicon Macs
+        System.setProperty("jna.library.path", "/opt/homebrew/lib");
+    }
+
     public String extractText(MultipartFile file) {
         String contentType = file.getContentType();
         if (contentType == null) {
@@ -74,10 +79,15 @@ public class MetadataExtractorService {
             Method doOcr = tesseractClass.getMethod("doOCR", File.class);
             String result = (String) doOcr.invoke(tesseract, tempFile);
             return result != null ? result.trim() : "";
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            System.err.println("OCR Error (Invocation): " + (cause != null ? cause.getMessage() : "null"));
+            if (cause != null) cause.printStackTrace();
+            throw new RuntimeException("OCR Processing Failed: " + (cause != null ? cause.getMessage() : "null"), cause);
         } catch (Throwable t) {
             System.err.println("OCR Error: " + t.getMessage());
             t.printStackTrace();
-            return "OCR Processing Failed: " + t.getMessage();
+            throw new RuntimeException("OCR Processing Failed: " + t.getMessage(), t);
         } finally {
             if (tempFile != null && tempFile.exists()) {
                 tempFile.delete();
@@ -103,8 +113,11 @@ public class MetadataExtractorService {
             Method getText = stripperClass.getMethod("getText", pdfDocClass);
             String text = (String) getText.invoke(stripper, document);
             return text != null ? text.trim() : "";
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            throw new RuntimeException("PDF Extraction Failed: " + (cause != null ? cause.getMessage() : "null"), cause);
         } catch (Exception e) {
-            return "PDF Extraction Failed: " + e.getMessage();
+            throw new RuntimeException("PDF Extraction Failed: " + e.getMessage(), e);
         } finally {
             if (document != null) {
                 try {

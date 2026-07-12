@@ -10,12 +10,16 @@ import com.dms.dao.UserRepository;
 import com.dms.models.User;
 import org.springframework.stereotype.Service;
 
+import com.dms.dao.WorkflowInstanceRepository;
+import com.dms.models.WorkflowInstance;
+
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -24,11 +28,24 @@ public class SearchService {
     private final DocumentRepository documentRepository;
     private final TagService tagService;
     private final UserRepository userRepository;
+    private final WorkflowInstanceRepository workflowInstanceRepository;
 
-    public SearchService(DocumentRepository documentRepository, TagService tagService, UserRepository userRepository) {
+    public SearchService(DocumentRepository documentRepository, TagService tagService, UserRepository userRepository, WorkflowInstanceRepository workflowInstanceRepository) {
         this.documentRepository = documentRepository;
         this.tagService = tagService;
         this.userRepository = userRepository;
+        this.workflowInstanceRepository = workflowInstanceRepository;
+    }
+
+    private String getDocumentWorkflowStatus(UUID documentId) {
+        List<WorkflowInstance> workflows = workflowInstanceRepository.findByDocumentId(documentId.toString());
+        if (workflows != null && !workflows.isEmpty()) {
+            return workflows.stream()
+                .reduce((latest, current) -> (current.getId() != null && latest.getId() != null && current.getId() > latest.getId()) ? current : latest)
+                .map(WorkflowInstance::getStatus)
+                .orElse(null);
+        }
+        return null;
     }
 
     private SearchResponseDTO mapToDTO(Documents doc) {
@@ -48,10 +65,19 @@ public class SearchService {
                     (v1, v2) -> v1 // In case of duplicate keys
                 ));
             dto.setMetadata(metaMap);
-            dto.setStatus(metaMap.getOrDefault("status", "Unknown"));
+            
+            // Override status with actual workflow status if available
+            String workflowStatus = getDocumentWorkflowStatus(doc.getDocument_id());
+            if (workflowStatus != null && !workflowStatus.isEmpty()) {
+                dto.setStatus(workflowStatus);
+            } else {
+                dto.setStatus(metaMap.getOrDefault("status", "Unknown"));
+            }
+            
             dto.setDescription(metaMap.getOrDefault("description", ""));
         } else {
-            dto.setStatus("Unknown");
+            String workflowStatus = getDocumentWorkflowStatus(doc.getDocument_id());
+            dto.setStatus(workflowStatus != null ? workflowStatus : "Unknown");
             dto.setDescription("");
         }
         
@@ -115,7 +141,20 @@ public class SearchService {
         // 2. In-memory filtering for advanced metadata options
         return docs.stream()
                 .filter(doc -> matchesMetadata(doc, "documentType", filters.getDocumentType()))
-                .filter(doc -> matchesMetadata(doc, "status", filters.getStatus()))
+                .filter(doc -> {
+                    String filterVal = filters.getStatus();
+                    if (filterVal == null || filterVal.trim().isEmpty() || filterVal.startsWith("All") || filterVal.startsWith("Any")) {
+                        return true;
+                    }
+                    String actualStatus = getDocumentWorkflowStatus(doc.getDocument_id());
+                    if (actualStatus == null && doc.getMetadata() != null) {
+                        actualStatus = doc.getMetadata().stream()
+                            .filter(m -> m.getKey().equalsIgnoreCase("status"))
+                            .map(DocumentMetadata::getValue)
+                            .findFirst().orElse(null);
+                    }
+                    return actualStatus != null && actualStatus.equalsIgnoreCase(filterVal);
+                })
                 .filter(doc -> matchesMetadata(doc, "signatureStatus", filters.getSignatureStatus()))
                 .filter(doc -> matchesOwner(doc, filters.getOwner()))
                 .filter(doc -> matchesDateRange(doc, filters.getDateRange()))

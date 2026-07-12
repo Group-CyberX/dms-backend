@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,5 +28,6 @@ public interface SearchLogRepository extends JpaRepository<SearchLog, UUID> {
     List<SearchHistoryResponseDTO> findSearchHistoryByUserId(@Param("userId") UUID userId);
 
     // Delete all search logs for a specific user
+    @Transactional
     void deleteAllByUserId(UUID userId);
 }
