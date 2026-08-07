@@ -8,7 +8,7 @@ public class SearchResponseDTO {
     private UUID documentId;
     private String title;
     private String createdAt;
-    private String owner;
+    private Object owner; // Changed to Object to allow Map mapping
     private String status;
     private String description;
     private List<String> tags;
@@ -42,10 +42,10 @@ public class SearchResponseDTO {
          this.createdAt = createdAt; 
     }
 
-    public String getOwner() {
+    public Object getOwner() {
          return owner; 
     }
-    public void setOwner(String owner) { 
+    public void setOwner(Object owner) { 
         this.owner = owner; 
     }
 

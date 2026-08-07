@@ -89,6 +89,25 @@
             <artifactId>s3</artifactId>
         </dependency>
 
+        <!-- Apache PDFBox for PDF text extraction and signature detection -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.1</version>
+        </dependency>
+
+        <!-- Tesseract 4J for OCR (Optical Character Recognition) -->
+        <dependency>
+            <groupId>net.sourceforge.tess4j</groupId>
+            <artifactId>tess4j</artifactId>
+            <version>5.10.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>net.sourceforge.lept4j</groupId>
+            <artifactId>lept4j</artifactId>
+            <version>1.19.1</version>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
