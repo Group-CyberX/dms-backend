@@ -44,4 +44,10 @@ public class NotificationController {
         notificationService.markAllUserNotificationsAsRead(userId);
         return ResponseEntity.ok().build();
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteNotification(@PathVariable("id") UUID notificationId) {
+        notificationService.deleteNotification(notificationId);
+        return ResponseEntity.noContent().build(); // Returns 204 No Content on success
+    }
 }

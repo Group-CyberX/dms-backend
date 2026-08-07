@@ -1,11 +1,11 @@
 package com.dms.models;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
+import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+
 import java.util.UUID;
 
 @Entity(name = "Documents")
@@ -30,11 +30,22 @@ public class Documents {
     @Column(name = "created_at")
     private LocalDateTime created_at;
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deleted_at;
+
+    @Column(name = "file_size")
+    private Long file_size;
+
     @Column(name = "is_locked")
     private boolean is_locked;
 
     @Column(name = "is_deleted")
     private boolean is_deleted;
+
+   
+
+    @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<DocumentMetadata> metadata = new ArrayList<>();
 
     public Documents(UUID document_id,
                    String title,
@@ -42,6 +53,8 @@ public class Documents {
                    UUID folder_id,
                    UUID current_version_id,
                    LocalDateTime created_at,
+                   LocalDateTime deleted_at,
+                   Long file_size,
                    boolean is_locked,
                    boolean is_deleted) {
         this.document_id = document_id;
@@ -50,6 +63,8 @@ public class Documents {
         this.folder_id = folder_id;
         this.current_version_id = current_version_id;
         this.created_at = created_at;
+        this.deleted_at = deleted_at;
+        this.file_size = file_size;
         this.is_locked = is_locked;
         this.is_deleted = is_deleted;
     }
@@ -106,6 +121,22 @@ public class Documents {
         this.created_at = created_at;
     }
 
+    public LocalDateTime getDeleted_at() {
+        return deleted_at;
+    }
+
+    public void setDeleted_at(LocalDateTime deleted_at) {
+        this.deleted_at = deleted_at;
+    }
+
+    public Long getFile_size() {
+        return file_size;
+    }
+
+    public void setFile_size(Long file_size) {
+        this.file_size = file_size;
+    }
+
     public boolean isIs_locked() {
         return is_locked;
     }
@@ -122,6 +153,7 @@ public class Documents {
         this.is_deleted = is_deleted;
     }
 
+    
     @Override
     public String toString() {
         return "Folders{" +
@@ -131,8 +163,20 @@ public class Documents {
                 ", folder_id=" + folder_id +
                 ", current_version_id=" + current_version_id +
                 ", created_at=" + created_at +
+                ", deleted_at=" + deleted_at +
+                ", file_size=" + file_size +
                 ", is_locked=" + is_locked +
                 ", is_deleted=" + is_deleted +
-                '}';
+            '}';
+    }
+
+    
+
+    public List<DocumentMetadata> getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(List<DocumentMetadata> metadata) {
+        this.metadata = metadata;
     }
 }
