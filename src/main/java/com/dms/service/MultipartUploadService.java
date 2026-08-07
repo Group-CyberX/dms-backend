@@ -62,10 +62,14 @@ public class MultipartUploadService {
     /**
      * STEP 1: Initiate multipart upload
      * Creates session and starts S3 multipart upload
+     * All metadata is already validated by the controller
      */
     @Transactional
     public MultipartUploadInitResponse initiateMultipartUpload(UUID documentId, String fileName, 
-                                                               Long totalSize, UUID userId) throws IOException {
+                                                               Long totalSize, UUID userId,
+                                                               String title, UUID folderId,
+                                                               String category, String tags,
+                                                               String description) throws IOException {
         UUID sessionId = UUID.randomUUID();
         
         String s3UploadId = null;
@@ -81,7 +85,7 @@ public class MultipartUploadService {
             s3UploadId = createResponse.uploadId();
         }
 
-        // Create session record
+        // Create session record with metadata
         MultipartUploadSession session = new MultipartUploadSession(
                 sessionId,
                 documentId,
@@ -90,6 +94,12 @@ public class MultipartUploadService {
                 totalSize,
                 s3UploadId
         );
+        // Store metadata in session
+        session.setTitle(title);
+        session.setFolderId(folderId);
+        session.setCategory(category);
+        session.setTags(tags);
+        session.setDescription(description);
         sessionRepository.save(session);
 
         return new MultipartUploadInitResponse(sessionId, s3UploadId, PART_SIZE);
@@ -102,11 +112,19 @@ public class MultipartUploadService {
     @Transactional
     public MultipartUploadPartResponse uploadPart(UUID sessionId, Integer partNumber, 
                                                    byte[] partData) throws IOException, NoSuchAlgorithmException {
+        System.out.println("[UPLOAD_PART] ===== UPLOADING PART =====");
+        System.out.println("[UPLOAD_PART] Session ID: " + sessionId);
+        System.out.println("[UPLOAD_PART] Part Number: " + partNumber);
+        System.out.println("[UPLOAD_PART] Part Size: " + partData.length + " bytes");
+        
         MultipartUploadSession session = sessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found"));
 
         String eTag = null;
         if ("s3".equalsIgnoreCase(storageType)) {
+            System.out.println("[UPLOAD_PART] Uploading to S3...");
+            long startTime = System.currentTimeMillis();
+            
             // Upload part to S3
             UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
                     .bucket(bucket)
@@ -120,10 +138,13 @@ public class MultipartUploadService {
                     software.amazon.awssdk.core.sync.RequestBody.fromBytes(partData)
             );
             eTag = uploadPartResponse.eTag();
+            long duration = System.currentTimeMillis() - startTime;
+            System.out.println("[UPLOAD_PART] S3 Upload completed in " + duration + "ms. ETag: " + eTag);
         } else {
             // Local storage
             eTag = calculateLocalETag(partData);
             saveLocalPart(sessionId, partNumber, partData);
+            System.out.println("[UPLOAD_PART] Local storage saved. ETag: " + eTag);
         }
 
         // Save part metadata
@@ -141,6 +162,9 @@ public class MultipartUploadService {
         session.setUploadedBytes(newUploaded);
         session.setLastActivity(LocalDateTime.now());
         sessionRepository.save(session);
+        
+        System.out.println("[UPLOAD_PART] Progress updated: " + newUploaded + " / " + session.getTotalSize() + " bytes");
+        System.out.println("[UPLOAD_PART] ===== END PART =====");
 
         return new MultipartUploadPartResponse(partNumber, eTag, newUploaded, session.getTotalSize());
     }
@@ -148,6 +172,7 @@ public class MultipartUploadService {
     /**
      * STEP 3: Complete multipart upload
      * Finalize S3 upload and create Document/DocumentVersion records
+     * All metadata validation already done during initiation
      */
     @Transactional
     public DocumentUploadResponse completeMultipartUpload(UUID sessionId, String title, 
@@ -166,11 +191,18 @@ public class MultipartUploadService {
             throw new IllegalArgumentException("No parts uploaded");
         }
 
+        // Use metadata from session (already validated during initiation)
+        String sessionTitle = session.getTitle() != null ? session.getTitle() : title;
+        UUID sessionFolderId = session.getFolderId() != null ? session.getFolderId() : folderId;
+        String sessionCategory = session.getCategory() != null ? session.getCategory() : category;
+        String sessionTags = session.getTags() != null ? session.getTags() : tags;
+        String sessionDescription = session.getDescription() != null ? session.getDescription() : description;
+
         // Build S3 bucket key
         String original = session.getFileName();
         UUID documentId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
-        String bucketKey = buildStorageKey(documentId, versionId, original, category);
+        String bucketKey = buildStorageKey(documentId, versionId, original, sessionCategory);
 
         String s3Key = null;
         if ("s3".equalsIgnoreCase(storageType)) {
@@ -214,7 +246,7 @@ public class MultipartUploadService {
         }
 
         // Get/Create folder
-        UUID effectiveFolderId = folderId != null ? folderId : getOrCreateFolder(category);
+        UUID effectiveFolderId = sessionFolderId != null ? sessionFolderId : getOrCreateFolder(sessionCategory);
 
         // Calculate final checksum from all parts
         String checksum = calculateFinalChecksum(sessionId);
@@ -222,7 +254,7 @@ public class MultipartUploadService {
         // Create Document
         Documents document = new Documents();
         document.setDocument_id(documentId);
-        document.setTitle(title);
+        document.setTitle(sessionTitle);
         document.setOwner_id(userId);
         document.setFolder_id(effectiveFolderId);
         document.setCurrent_version_id(versionId);
@@ -244,8 +276,8 @@ public class MultipartUploadService {
         versionRepository.save(version);
 
         // Save tags
-        if (tags != null && !tags.isBlank()) {
-            tagService.saveTags(documentId, tags);
+        if (sessionTags != null && !sessionTags.isBlank()) {
+            tagService.saveTags(documentId, sessionTags);
         }
 
         // Mark session complete
@@ -256,7 +288,7 @@ public class MultipartUploadService {
         return new DocumentUploadResponse(
                 documentId,
                 versionId,
-                title,
+                sessionTitle,
                 session.getFileName(),
                 "Multipart upload completed successfully",
                 true
@@ -295,15 +327,67 @@ public class MultipartUploadService {
     }
 
     /**
-     * Get upload progress
+     * Get upload progress with S3 verification
+     * Returns actual bytes stored in S3, not just database tracking
+     * This is the source of truth for upload progress
      */
     public MultipartUploadProgressResponse getProgress(UUID sessionId) throws IOException {
         MultipartUploadSession session = sessionRepository.findBySessionId(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found"));
 
-        long uploadedBytes = session.getUploadedBytes();
+        long uploadedBytes = 0;
         long totalBytes = session.getTotalSize();
+        
+        System.out.println("\n[PROGRESS] ===== GET PROGRESS CALLED =====");
+        System.out.println("[PROGRESS] Session ID: " + sessionId);
+        System.out.println("[PROGRESS] Total Size: " + totalBytes + " bytes");
+        System.out.println("[PROGRESS] DB Uploaded Bytes Before Query: " + session.getUploadedBytes());
+        System.out.println("[PROGRESS] S3 Upload ID: " + session.getS3UploadId());
+        System.out.println("[PROGRESS] Storage Type: " + storageType);
+
+        if ("s3".equalsIgnoreCase(storageType)) {
+            // Query S3 to get list of uploaded parts - source of truth
+            try {
+                ListPartsRequest listRequest = ListPartsRequest.builder()
+                        .bucket(bucket)
+                        .key(sessionId.toString())
+                        .uploadId(session.getS3UploadId())
+                        .build();
+
+                ListPartsResponse listResponse = s3Client.listParts(listRequest);
+                int partCount = listResponse.parts().size();
+                
+                System.out.println("[PROGRESS] S3 Query Successful - Parts found: " + partCount);
+                
+                // Sum actual bytes in S3
+                uploadedBytes = listResponse.parts().stream()
+                        .peek(part -> System.out.println("[PROGRESS]   Part #" + part.partNumber() + ": " + part.size() + " bytes"))
+                        .mapToLong(Part::size)
+                        .sum();
+                
+                System.out.println("[PROGRESS] Total bytes from S3: " + uploadedBytes);
+                
+                // Update database with accurate progress from S3
+                session.setUploadedBytes(uploadedBytes);
+                session.setLastActivity(LocalDateTime.now());
+                sessionRepository.save(session);
+            } catch (Exception e) {
+                // If S3 query fails, fall back to database
+                System.err.println("[PROGRESS] ERROR querying S3: " + e.getMessage());
+                e.printStackTrace();
+                uploadedBytes = session.getUploadedBytes();
+                System.out.println("[PROGRESS] Falling back to DB value: " + uploadedBytes);
+            }
+        } else {
+            // For local storage, use database tracking
+            uploadedBytes = session.getUploadedBytes();
+            System.out.println("[PROGRESS] Using local storage (not S3). Bytes: " + uploadedBytes);
+        }
+
         double percentComplete = totalBytes > 0 ? (uploadedBytes * 100.0) / totalBytes : 0.0;
+        
+        System.out.println("[PROGRESS] RESULT: " + uploadedBytes + " / " + totalBytes + " bytes = " + String.format("%.2f", percentComplete) + "%");
+        System.out.println("[PROGRESS] ===== END PROGRESS =====");
 
         return new MultipartUploadProgressResponse(
                 sessionId,

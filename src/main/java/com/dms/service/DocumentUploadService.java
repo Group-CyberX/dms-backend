@@ -87,8 +87,15 @@ public class DocumentUploadService {
     @Transactional
     public DocumentUploadResponse uploadDocument(MultipartFile file, UploadDocumentRequest request, UUID userId) throws IOException {
         String fileName = file != null ? file.getOriginalFilename() : "unknown";
+        long fileSize = file != null ? file.getSize() : 0;
+        
+        System.out.println("\n[SINGLE_UPLOAD] ===== SINGLE FILE UPLOAD STARTED =====");
+        System.out.println("[SINGLE_UPLOAD] File: " + fileName);
+        System.out.println("[SINGLE_UPLOAD] File Size: " + fileSize + " bytes");
+        System.out.println("[SINGLE_UPLOAD] Storage Type: " + storageType);
         
         if (file == null || file.isEmpty()) {
+            System.out.println("[SINGLE_UPLOAD] ERROR: File is empty");
             return new DocumentUploadResponse(null, null, null, fileName, "File is empty", false);
         }
 
@@ -183,15 +190,28 @@ public class DocumentUploadService {
         boolean storedInS3 = false;
         try {
             // Calculate checksum
-            String checksum = calculateChecksum(file.getBytes());  
+            System.out.println("[SINGLE_UPLOAD] Calculating checksum...");
+            long checksumStart = System.currentTimeMillis();
+            String checksum = calculateChecksum(file.getBytes());
+            long checksumDuration = System.currentTimeMillis() - checksumStart;
+            System.out.println("[SINGLE_UPLOAD] Checksum calculated in " + checksumDuration + "ms: " + checksum);
 
             // Save to selected storage (S3 or local)
             if ("s3".equalsIgnoreCase(storageType)) {
                 savedFileName = buildStorageKey(documentId, versionId, original, categoryNormalized);
+                System.out.println("[SINGLE_UPLOAD] Uploading to S3...");
+                System.out.println("[SINGLE_UPLOAD] S3 Key: " + savedFileName);
+                long uploadStart = System.currentTimeMillis();
                 uploadToS3(savedFileName, file);
+                long uploadDuration = System.currentTimeMillis() - uploadStart;
+                System.out.println("[SINGLE_UPLOAD] S3 Upload completed in " + uploadDuration + "ms");
                 storedInS3 = true;
             } else {
+                System.out.println("[SINGLE_UPLOAD] Saving to local storage...");
+                long saveStart = System.currentTimeMillis();
                 savedFileName = saveFileWithProvidedName(file, documentId, versionId, original, categoryNormalized);
+                long saveDuration = System.currentTimeMillis() - saveStart;
+                System.out.println("[SINGLE_UPLOAD] Local storage saved in " + saveDuration + "ms: " + savedFileName);
             }
 
             // Create Document record
@@ -243,6 +263,11 @@ public class DocumentUploadService {
             String sigStatusValue = hasSignature ? "signed" : "unsigned";
             documentMetadataRepository.save(new DocumentMetadata(document, "signatureStatus", sigStatusValue));
 
+            System.out.println("[SINGLE_UPLOAD] Upload successful!");
+            System.out.println("[SINGLE_UPLOAD] Document ID: " + documentId);
+            System.out.println("[SINGLE_UPLOAD] Version ID: " + versionId);
+            System.out.println("[SINGLE_UPLOAD] ===== END SINGLE UPLOAD =====");
+            
             return new DocumentUploadResponse(
                     documentId,
                     versionId,
