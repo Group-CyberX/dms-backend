@@ -10,7 +10,6 @@ public class CreateShareLinkRequest {
     private int expiryDays;
 
     // Security & permission settings
-    private boolean requireAuth;
     private boolean allowDownload;
     private boolean allowComments;
     

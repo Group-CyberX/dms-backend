@@ -39,9 +39,6 @@ public class ShareLink {
     @Column(name = "password_hash", nullable = true)
     private String passwordHash;
 
-    @Column(name = "require_auth", nullable = false)
-    private boolean requireAuth;
-
     @Column(name = "allow_download", nullable = false)
     private boolean allowDownload;
 
