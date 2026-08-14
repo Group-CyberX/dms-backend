@@ -49,14 +49,22 @@ public class DocumentController {
     }
 
     @GetMapping
-    public List<DocumentResponse> getAll(Authentication auth) {
+    public List<DocumentResponse> getAll(
+            Authentication auth,
+            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all) {
         if (auth == null || !auth.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        return documentRepository.findAllActiveByOwner(
-                        com.dms.security.SecurityUtils.currentUserId())
-                .stream()
+        List<Documents> docs;
+        if (all) {
+            docs = documentRepository.findAllActive();
+        } else {
+            docs = documentRepository.findAllActiveByOwner(
+                    com.dms.security.SecurityUtils.currentUserId());
+        }
+
+        return docs.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }

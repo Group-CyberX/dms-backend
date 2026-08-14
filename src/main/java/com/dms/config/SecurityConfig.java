@@ -62,6 +62,9 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
 
+                        //TO MAKE SIGNATURE ENDPOINTS PUBLIC FOR TESTING
+                        .requestMatchers("/api/signatures/**").permitAll()
+
                         // Share links
                         .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll()
@@ -69,8 +72,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
 
                         // Comments & Notifications
-                        .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
-                        .requestMatchers("/api/comments/**").authenticated()
+                        .requestMatchers("/api/comments/**").permitAll()
 
                         // Admin & User specific
                         .requestMatchers("/admin/logs/**").authenticated()
@@ -79,7 +81,9 @@ public class SecurityConfig {
                         .requestMatchers("/user/**").authenticated()
 
                         // General admin rules
-                        .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
+                        // Used to populate approver pickers; every caller sends a JWT,
+                        // so this must not be public - it exposes the full user list.
+                        .requestMatchers(HttpMethod.GET, "/api/users").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
 
                         // Strict Admin endpoints (Now protected via @PreAuthorize at method level)

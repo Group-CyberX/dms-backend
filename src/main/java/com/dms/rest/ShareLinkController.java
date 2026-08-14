@@ -117,4 +117,25 @@ public class ShareLinkController {
 
             return service.downloadFile(token, password, userId);
         }
+
+        // Preview document through share link
+        @GetMapping("/{token}/preview")
+        public ResponseEntity<byte[]> preview(
+                @PathVariable String token,
+                @RequestParam(required = false) String password,
+                Authentication auth
+        ) {
+
+            UUID userId = null;
+
+            // Get user if authenticated
+            if (auth != null && auth.isAuthenticated()) {
+                String email = auth.getName();
+                User user = userRepository.findByEmail(email)
+                        .orElseThrow(() -> new RuntimeException("User not found"));
+                userId = user.getUserId();
+            }
+
+            return service.previewFile(token, password, userId);
+        }
 }

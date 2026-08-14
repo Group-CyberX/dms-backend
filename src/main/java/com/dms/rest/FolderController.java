@@ -1,12 +1,17 @@
 package com.dms.rest;
 
 import com.dms.dao.FolderRepository;
+import com.dms.dto.FolderCreateRequest;
+import com.dms.dto.FolderDeleteResponse;
+import com.dms.dto.FolderRestoreResponse;
+import com.dms.dto.FolderTrashItemDTO;
+import com.dms.dto.FolderTreeNodeDTO;
 import com.dms.models.Folders;
+import com.dms.service.AuditLogService;
+import com.dms.service.FolderTreeService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.dms.models.AuditLog;
-import com.dms.service.AuditLogService;
-import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.URI;
 import java.util.List;
@@ -18,16 +23,31 @@ import java.util.UUID;
 public class FolderController {
 
     private final FolderRepository folderRepository;
+    private final FolderTreeService folderTreeService;
     private final AuditLogService auditLogService;
 
-    public FolderController(FolderRepository folderRepository,AuditLogService auditLogService) {
+    public FolderController(FolderRepository folderRepository,
+                            FolderTreeService folderTreeService,
+                            AuditLogService auditLogService) {
         this.folderRepository = folderRepository;
+        this.folderTreeService = folderTreeService;
         this.auditLogService = auditLogService;
     }
 
     @GetMapping
     public List<Folders> getAll() {
-        return folderRepository.findAll();
+        return folderRepository.findAllActive();
+    }
+
+    @GetMapping("/tree")
+    public FolderTreeNodeDTO getTree() {
+        return folderTreeService.getFullTree();
+    }
+
+    /** Recycle bin listing: one row per deleted folder subtree. */
+    @GetMapping("/trash")
+    public List<FolderTrashItemDTO> getTrash() {
+        return folderTreeService.getFolderTrash();
     }
 
     @GetMapping("/{id}")
@@ -37,12 +57,18 @@ public class FolderController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PostMapping
-    public ResponseEntity<Folders> create(@RequestBody Folders folder) {
-        if (folder.getFolder_id() == null) {
-            folder.setFolder_id(UUID.randomUUID());
+    @GetMapping("/{id}/subtree")
+    public ResponseEntity<List<Folders>> getSubtree(@PathVariable("id") UUID id) {
+        if (!folderRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
         }
-        Folders saved = folderRepository.save(folder);
+        return ResponseEntity.ok(folderTreeService.getDescendants(id));
+    }
+
+    @PostMapping
+    public ResponseEntity<Folders> create(@RequestBody FolderCreateRequest request, HttpServletRequest httpReq) {
+        Folders saved = folderTreeService.createFolder(request, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_CREATED", saved.getFolder_id(), httpReq.getRemoteAddr(), "SUCCESS");
         return ResponseEntity.created(URI.create("/api/folders/" + saved.getFolder_id())).body(saved);
     }
 
@@ -60,21 +86,32 @@ public class FolderController {
         return ResponseEntity.ok(saved);
     }
 
+    /**
+     * Moves a folder along with all of its subfolders to the recycle bin,
+     * moving every document inside any of them to the recycle bin too
+     * (soft delete). Nothing is permanently removed.
+     */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable("id") UUID id) {
+    public ResponseEntity<?> delete(@PathVariable("id") UUID id, HttpServletRequest httpReq) {
         if (!folderRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
-        folderRepository.deleteById(id);
-        return ResponseEntity.noContent().build();
+        FolderDeleteResponse result = folderTreeService.deleteFolderCascade(id, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_DELETED", id, httpReq.getRemoteAddr(), "SUCCESS");
+        return ResponseEntity.ok(result);
     }
-    // helper method
-    private void createAuditLog(String action, UUID entityId, HttpServletRequest request, String status) {
-        AuditLog log = new AuditLog();
-        log.setAction(action);
-        log.setEntity_id(entityId);
-        log.setIp(request.getRemoteAddr());
-        log.setStatus(status);
-        auditLogService.saveLog(log);
+
+    /**
+     * Restores a folder and its entire subtree out of the recycle bin,
+     * along with every document that was soft-deleted inside any of them.
+     */
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<?> restore(@PathVariable("id") UUID id, HttpServletRequest httpReq) {
+        if (!folderRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        FolderRestoreResponse result = folderTreeService.restoreFolderCascade(id, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_RESTORED", id, httpReq.getRemoteAddr(), "SUCCESS");
+        return ResponseEntity.ok(result);
     }
 }

@@ -51,6 +51,15 @@ public class MultipartUploadSession {
     @Column(name = "s3_bucket_key")
     private String s3BucketKey;
 
+    @Column(name = "title")
+    private String title;
+
+    @Column(name = "tags")
+    private String tags;
+
+    @Column(name = "description", length = 1000)
+    private String description;
+
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<UploadedPart> parts = new ArrayList<>();
 
@@ -187,5 +196,29 @@ public class MultipartUploadSession {
 
     public void setParts(List<UploadedPart> parts) { 
         this.parts = parts; 
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 }

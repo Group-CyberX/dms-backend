@@ -9,6 +9,7 @@ import com.dms.models.Documents;
 import com.dms.enums.AccessLevel;
 import com.dms.dao.ShareAccessLogRepository;
 import com.dms.dao.DocumentRepository;
+import com.dms.dao.DocumentVersionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,8 @@ public class ShareLinkService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final ShareAccessLogRepository accessLogRepository;
     private final DocumentRepository documentRepository;
+    private final DocumentVersionRepository documentVersionRepository;
+    private final DocumentVersionService documentVersionService;
 
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
@@ -58,7 +61,6 @@ public class ShareLinkService {
                 .expiryDate(expiryDate)
                 .accessLevel(AccessLevel.valueOf(request.getAccessLevel()))                
                 .passwordHash(hashedPassword)
-                .requireAuth(request.isRequireAuth())
                 .allowDownload(request.isAllowDownload())
                 .allowComments(request.isAllowComments())
                 .isActive(true)
@@ -131,8 +133,8 @@ public class ShareLinkService {
         //validate link
         ShareLink link = validateLink(token, password);
 
-        // check authentication requirement
-        if (link.isRequireAuth() && userId == null) {
+        // check authentication requirement (Always required)
+        if (userId == null) {
             throw new RuntimeException("Authentication required");
         }
 
@@ -151,12 +153,28 @@ public class ShareLinkService {
 
         accessLogRepository.save(log);
 
+        // Get the latest version of the document to extract the filename
+        com.dms.models.DocumentVersions latestVersion = documentVersionRepository
+                .findByDocument_idOrderByCreated_atDesc(link.getDocumentId())
+                .stream()
+                .findFirst()
+                .orElse(null);
+
+        String fileName = null;
+        if (latestVersion != null && latestVersion.getS3_bucket_key() != null) {
+            fileName = latestVersion.getS3_bucket_key();
+            if (fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+        }
+
         // Return access details
         return Map.of(
-                "documentId", link.getDocumentId(),
-                "documentName", doc != null ? doc.getTitle() : "Document",
+                "documentId", link.getDocumentId().toString(),
+                "documentName", doc != null && doc.getTitle() != null ? doc.getTitle() : "Document",
                 "allowDownload", link.isAllowDownload(),
-                "allowComments", link.isAllowComments()
+                "allowComments", link.isAllowComments(),
+                "fileName", fileName != null ? fileName : (doc != null && doc.getTitle() != null ? doc.getTitle() : "document")
         );
     }
 
@@ -169,7 +187,7 @@ public class ShareLinkService {
 
         ShareLink link = validateLink(token, password);
 
-        if (link.isRequireAuth() && userId == null) {
+        if (userId == null) {
             throw new RuntimeException("Authentication required");
         }
 
@@ -179,18 +197,77 @@ public class ShareLinkService {
 
         UUID documentId = link.getDocumentId();
 
-        byte[] fileData = ("File for document: " + documentId).getBytes();
+        // Get the latest version of the document
+        com.dms.models.DocumentVersions latestVersion = documentVersionRepository
+                .findByDocument_idOrderByCreated_atDesc(documentId)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No versions found for document"));
 
-        ShareAccessLog log = new ShareAccessLog();
-        log.setToken(token);
-        log.setUserId(userId);
-        log.setDownloaded(true);
-        log.setAccessedAt(LocalDateTime.now());
+        try {
+            byte[] fileBytes = documentVersionService.getVersionFileBytes(documentId, latestVersion.getVersion_id());
+            
+            String fileName = latestVersion.getS3_bucket_key();
+            if (fileName != null && fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            } else if (fileName == null) {
+                fileName = "document";
+            }
 
-        accessLogRepository.save(log);
+            ShareAccessLog log = new ShareAccessLog();
+            log.setToken(token);
+            log.setUserId(userId);
+            log.setDownloaded(true);
+            log.setAccessedAt(LocalDateTime.now());
 
-        return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=document.txt")
-                .body(fileData);
+            accessLogRepository.save(log);
+
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/octet-stream")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to download file: " + e.getMessage());
+        }
+    }
+
+    // Preview document through share link
+    public ResponseEntity<byte[]> previewFile(
+        String token,
+        String password,
+        UUID userId
+    ) {
+        ShareLink link = validateLink(token, password);
+
+        if (userId == null) {
+            throw new RuntimeException("Authentication required");
+        }
+
+        UUID documentId = link.getDocumentId();
+
+        // Get the latest version of the document
+        com.dms.models.DocumentVersions latestVersion = documentVersionRepository
+                .findByDocument_idOrderByCreated_atDesc(documentId)
+                .stream()
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("No versions found for document"));
+
+        try {
+            byte[] fileBytes = documentVersionService.getVersionFileBytes(documentId, latestVersion.getVersion_id());
+            
+            String fileName = latestVersion.getS3_bucket_key();
+            if (fileName != null && fileName.contains("/")) {
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            } else if (fileName == null) {
+                fileName = "document";
+            }
+
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + fileName + "\"")
+                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/octet-stream")
+                    .body(fileBytes);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load preview: " + e.getMessage());
+        }
     }
 }

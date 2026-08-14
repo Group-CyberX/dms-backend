@@ -6,6 +6,7 @@ import com.dms.dto.SearchHistoryResponseDTO;
 import com.dms.dto.SearchLogRequestDTO;
 import com.dms.dto.SearchResponseDTO;
 import com.dms.models.SearchLog;
+import com.dms.security.SecurityUtils;
 import com.dms.service.SearchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/search")
@@ -20,10 +22,12 @@ public class SearchController {
 
     private final SearchService searchService;
     private final SearchLogRepository searchLogRepository;
+    private final com.dms.dao.UserRepository userRepository;
 
-    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository) {
+    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository, com.dms.dao.UserRepository userRepository) {
         this.searchService = searchService;
         this.searchLogRepository = searchLogRepository;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -72,8 +76,11 @@ public class SearchController {
             return ResponseEntity.badRequest().build();
         }
         
+        // Get current user ID from authentication context
+        UUID userId = SecurityUtils.currentUserId();
+        
         SearchLog log = new SearchLog(
-                null, // userId kept null as default for now
+                userId,
                 logRequest.getQuery(),
                 logRequest.getClickedDocId()
         );
@@ -83,21 +90,23 @@ public class SearchController {
     }
 
     /**
-     * Get Search History (recently clicked items)
+     * Get Search History (recently clicked items) for current user
      * Usage: GET /api/search/history
      */
     @GetMapping("/history")
     public ResponseEntity<List<SearchHistoryResponseDTO>> getSearchHistory() {
-        return ResponseEntity.ok(searchLogRepository.findSearchHistory());
+        UUID userId = SecurityUtils.currentUserId();
+        return ResponseEntity.ok(searchLogRepository.findSearchHistoryByUserId(userId));
     }
 
     /**
-     * Clear Search History
+     * Clear Search History for current user
      * Usage: DELETE /api/search/history
      */
     @DeleteMapping("/history")
     public ResponseEntity<Void> clearSearchHistory() {
-        searchLogRepository.deleteAll();
+        UUID userId = SecurityUtils.currentUserId();
+        searchLogRepository.deleteAllByUserId(userId);
         return ResponseEntity.noContent().build();
     }
 
@@ -131,13 +140,13 @@ public class SearchController {
             "Active"
         ));
         
-        // Owner filters
-        options.put("owners", List.of(
-            "Me",
-            "Team",
-            "Organization",
-            "Shared with Me"
-        ));
+        // Owner filters (load active users)
+        options.put("owners", userRepository.findAll().stream()
+                .filter(u -> "ACTIVE".equals(u.getStatus()))
+                .map(com.dms.models.User::getUsername)
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList()
+        );
         
         // Signature statuses
         options.put("signatureStatuses", List.of(

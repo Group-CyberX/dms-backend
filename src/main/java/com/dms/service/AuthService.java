@@ -14,6 +14,7 @@ import com.dms.dao.RefreshTokenRepository;
 import com.dms.models.RefreshToken;
 
 import com.dms.util.PermissionUtil;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -67,15 +68,17 @@ public class AuthService {
     //Login
     public LoginResponse login(LoginRequest request) {
 
+        // Same message for "no such user" and "wrong password" so the endpoint
+        // cannot be used to discover which email addresses are registered.
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
         boolean isMatch = passwordEncoder.matches(
                 request.getPassword(),
                 user.getPasswordHash());
 
         if (!isMatch) {
-            throw new RuntimeException("Invalid email or password");
+            throw new BadCredentialsException("Invalid email or password");
         }
 
         // Generate access token

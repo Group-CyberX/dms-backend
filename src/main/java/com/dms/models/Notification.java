@@ -11,8 +11,8 @@ public class Notification {
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "notification_id") // Maps to DB
-    private UUID notificationId;      // Java variable
+    @Column(name = "notification_id")
+    private UUID notificationId;
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -51,7 +51,6 @@ public class Notification {
         this.isDeleted = false;
     }
 
-    // --- Updated Getters and Setters ---
     public UUID getNotificationId() { return notificationId; }
     public void setNotificationId(UUID notificationId) { this.notificationId = notificationId; }
 
@@ -61,11 +60,12 @@ public class Notification {
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
 
-    public boolean isIsRead() {
+    // FIX: Standardized cleaner serialization getters/setters
+    public boolean isRead() {
         return isRead;
     }
 
-    public void setIsRead(boolean isRead) {
+    public void setRead(boolean isRead) {
         this.isRead = isRead;
     }
 
@@ -75,6 +75,11 @@ public class Notification {
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
 
-    public boolean isIsDeleted() { return isDeleted; }
-    public void setIsDeleted(boolean isDeleted) { this.isDeleted = isDeleted; }
+    public boolean isDeleted() {
+        return isDeleted;
+    }
+
+    public void setDeleted(boolean isDeleted) {
+        this.isDeleted = isDeleted;
+    }
 }
