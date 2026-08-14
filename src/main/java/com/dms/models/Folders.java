@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity(name = "Folders")
@@ -22,6 +23,12 @@ public class Folders {
 
     @Column(name = "path")
     private String path;
+
+    @Column(name = "is_deleted")
+    private boolean is_deleted;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deleted_at;
 
     public Folders() {
     }
@@ -68,6 +75,22 @@ public class Folders {
         this.path = path;
     }
 
+    public boolean isIs_deleted() {
+        return is_deleted;
+    }
+
+    public void setIs_deleted(boolean is_deleted) {
+        this.is_deleted = is_deleted;
+    }
+
+    public LocalDateTime getDeleted_at() {
+        return deleted_at;
+    }
+
+    public void setDeleted_at(LocalDateTime deleted_at) {
+        this.deleted_at = deleted_at;
+    }
+
     @Override
     public String toString() {
         return "Folders{" +
@@ -75,6 +98,7 @@ public class Folders {
                 ", name='" + name + '\'' +
                 ", parent_folder_id=" + parent_folder_id +
                 ", path='" + path + '\'' +
+                ", is_deleted=" + is_deleted +
                 '}';
     }
 }
