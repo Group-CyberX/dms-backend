@@ -103,7 +103,11 @@ public class WorkflowService {
 
         // Default status
         instance.setStatus(WorkflowConstants.WORKFLOW_PENDING_APPROVAL);
-        instance.setCreatedByUserId(request.getCreatedByUserId());
+        try {
+            instance.setCreatedByUserId(com.dms.security.SecurityUtils.currentUserId().toString());
+        } catch (Exception e) {
+            instance.setCreatedByUserId(request.getCreatedByUserId());
+        }
 
         instance = instanceRepo.save(instance);
 
