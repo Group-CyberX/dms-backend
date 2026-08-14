@@ -34,8 +34,8 @@ public class CommentService {
             throw new RuntimeException("Comments are not allowed");
         }
 
-        // Check authentication requirement
-        if (link.isRequireAuth() && userId == null) {
+        // Check authentication requirement (Always required)
+        if (userId == null) {
             throw new RuntimeException("Login required to comment");
         }
 

@@ -42,6 +42,8 @@ public class Documents {
     @Column(name = "is_deleted")
     private boolean is_deleted;
 
+   
+
     @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentMetadata> metadata = new ArrayList<>();
 
@@ -151,6 +153,7 @@ public class Documents {
         this.is_deleted = is_deleted;
     }
 
+    
     @Override
     public String toString() {
         return "Folders{" +
@@ -164,7 +167,7 @@ public class Documents {
                 ", file_size=" + file_size +
                 ", is_locked=" + is_locked +
                 ", is_deleted=" + is_deleted +
-                '}';
+            '}';
     }
 
     

@@ -62,6 +62,9 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/auth/**").permitAll()
 
+                        //TO MAKE SIGNATURE ENDPOINTS PUBLIC FOR TESTING
+                        .requestMatchers("/api/signatures/**").permitAll()
+
                         // Share links
                         .requestMatchers(HttpMethod.POST, "/api/share-links").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/share-links/*/access").permitAll()
@@ -69,8 +72,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/share-links/**").permitAll()
 
                         // Comments & Notifications
-                        .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
-                        .requestMatchers("/api/comments/**").authenticated()
+                        .requestMatchers("/api/comments/**").permitAll()
 
                         // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
                         .requestMatchers("/admin/logs/**").hasAnyRole("USER", "SYSTEM_ADMIN")
