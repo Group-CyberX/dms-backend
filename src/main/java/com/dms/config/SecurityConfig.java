@@ -74,18 +74,20 @@ public class SecurityConfig {
                         // Comments & Notifications
                         .requestMatchers("/api/comments/**").permitAll()
 
-                        // Admin & User specific - Use Authority to avoid ROLE_ prefix issues
-                        .requestMatchers("/admin/logs/**").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        // Admin & User specific
+                        .requestMatchers("/admin/logs/**").authenticated()
 
                         // User endpoints
-                        .requestMatchers("/user/**").hasAnyRole("USER", "SYSTEM_ADMIN")
+                        .requestMatchers("/user/**").authenticated()
 
                         // General admin rules
-                        .requestMatchers(HttpMethod.GET, "/api/users").permitAll()
+                        // Used to populate approver pickers; every caller sends a JWT,
+                        // so this must not be public - it exposes the full user list.
+                        .requestMatchers(HttpMethod.GET, "/api/users").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/users/me").authenticated()
 
-                        // Strict Admin endpoints
-                        .requestMatchers("/admin/**").hasRole("SYSTEM_ADMIN")
+                        // Strict Admin endpoints (Now protected via @PreAuthorize at method level)
+                        .requestMatchers("/admin/**").authenticated()
 
                         // Other APIs require authentication
                         .anyRequest().authenticated()
