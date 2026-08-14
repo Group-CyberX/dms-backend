@@ -7,6 +7,7 @@ import com.dms.dto.FolderRestoreResponse;
 import com.dms.dto.FolderTrashItemDTO;
 import com.dms.dto.FolderTreeNodeDTO;
 import com.dms.models.Folders;
+import com.dms.service.AuditLogService;
 import com.dms.service.FolderTreeService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -23,11 +24,14 @@ public class FolderController {
 
     private final FolderRepository folderRepository;
     private final FolderTreeService folderTreeService;
+    private final AuditLogService auditLogService;
 
     public FolderController(FolderRepository folderRepository,
-                            FolderTreeService folderTreeService) {
+                            FolderTreeService folderTreeService,
+                            AuditLogService auditLogService) {
         this.folderRepository = folderRepository;
         this.folderTreeService = folderTreeService;
+        this.auditLogService = auditLogService;
     }
 
     @GetMapping
@@ -64,6 +68,7 @@ public class FolderController {
     @PostMapping
     public ResponseEntity<Folders> create(@RequestBody FolderCreateRequest request, HttpServletRequest httpReq) {
         Folders saved = folderTreeService.createFolder(request, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_CREATED", saved.getFolder_id(), httpReq.getRemoteAddr(), "SUCCESS");
         return ResponseEntity.created(URI.create("/api/folders/" + saved.getFolder_id())).body(saved);
     }
 
@@ -92,6 +97,7 @@ public class FolderController {
             return ResponseEntity.notFound().build();
         }
         FolderDeleteResponse result = folderTreeService.deleteFolderCascade(id, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_DELETED", id, httpReq.getRemoteAddr(), "SUCCESS");
         return ResponseEntity.ok(result);
     }
 
@@ -105,6 +111,7 @@ public class FolderController {
             return ResponseEntity.notFound().build();
         }
         FolderRestoreResponse result = folderTreeService.restoreFolderCascade(id, httpReq.getRemoteAddr());
+        auditLogService.createAuditLog("FOLDER_RESTORED", id, httpReq.getRemoteAddr(), "SUCCESS");
         return ResponseEntity.ok(result);
     }
 }
