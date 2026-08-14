@@ -2,6 +2,7 @@ package com.dms.service;
 
 import com.dms.dao.RoleRepository;
 import com.dms.dao.UserRepository;
+import com.dms.dto.ValidateTokenResponse;
 import com.dms.dto.LoginRequest;
 import com.dms.dto.RegisterRequest;
 import com.dms.dto.RegisterResponse;
@@ -13,6 +14,7 @@ import com.dms.dao.RefreshTokenRepository;
 import com.dms.models.RefreshToken;
 
 import com.dms.util.PermissionUtil;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -27,17 +29,20 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;  // Used for hashing passwords securely
     private final JwtUtil jwtUtil;                  // Utility class for generating and validating JWT tokens
     private final RefreshTokenRepository refreshTokenRepository;    // Repository to store and manage refresh tokens
+    private final EmailService emailService;        // Service for sending emails
 
     public AuthService(UserRepository userRepository,
                        RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
                        JwtUtil jwtUtil,
-                       RefreshTokenRepository refreshTokenRepository) {
+                       RefreshTokenRepository refreshTokenRepository,
+                       EmailService emailService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.emailService = emailService;
     }
     // Register
     public RegisterResponse register(RegisterRequest request) {
@@ -63,15 +68,17 @@ public class AuthService {
     //Login
     public LoginResponse login(LoginRequest request) {
 
+        // Same message for "no such user" and "wrong password" so the endpoint
+        // cannot be used to discover which email addresses are registered.
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
         boolean isMatch = passwordEncoder.matches(
                 request.getPassword(),
                 user.getPasswordHash());
 
         if (!isMatch) {
-            throw new RuntimeException("Invalid email or password");
+            throw new BadCredentialsException("Invalid email or password");
         }
 
         // Generate access token
@@ -79,6 +86,10 @@ public class AuthService {
                 user.getEmail(),
                 user.getRole().getName()
         );
+
+        // Update last login
+        user.setLastLogin(LocalDateTime.now());
+        userRepository.save(user);
 
         // Generate refresh token
         String refreshToken = createRefreshToken(user);
@@ -97,6 +108,7 @@ public class AuthService {
         //Return full response
         return new LoginResponse(
                 user.getEmail(),
+                user.getUsername(),
                 accessToken,
                 refreshToken,
                 roleName,
@@ -118,9 +130,7 @@ public class AuthService {
 
             userRepository.save(user);
 
-            String resetLink = "http://localhost:3000/reset-password?token=" + token;
-
-            System.out.println("Reset Link: " + resetLink);
+            emailService.sendPasswordResetEmail(email, token);
         }
     }
 //reset password
@@ -144,6 +154,27 @@ public class AuthService {
         user.setResetTokenExpiry(null);
 
         userRepository.save(user);
+    }
+
+    // Validate reset token and return expiry info for frontend countdown
+    public ValidateTokenResponse validateResetToken(String token) {
+
+        User user = userRepository.findByResetToken(token).orElse(null);
+
+        if (user == null) {
+            return new ValidateTokenResponse(false, null, "Invalid or expired reset link");
+        }
+
+        if (user.getResetTokenExpiry() == null ||
+                user.getResetTokenExpiry().isBefore(LocalDateTime.now())) {
+            return new ValidateTokenResponse(false, null, "Reset link has expired");
+        }
+
+        return new ValidateTokenResponse(
+                true,
+                user.getResetTokenExpiry().toString(),
+                "Token is valid"
+        );
     }
 
     //Refresh token
@@ -185,6 +216,11 @@ public class AuthService {
                 user.getRole().getName()
         );
 
+        // Token rotation: revoke old refresh token and issue new one
+        token.setRevoked(true);
+        refreshTokenRepository.save(token);
+        String newRefreshToken = createRefreshToken(user);
+
         String roleName = user.getRole().getName();
 
         Map<String, Boolean> permissions =
@@ -196,8 +232,9 @@ public class AuthService {
 
         return new LoginResponse(
                 user.getEmail(),
+                user.getUsername(),
                 newAccessToken,
-                requestToken,
+                newRefreshToken,
                 roleName,
                 permissions
         );

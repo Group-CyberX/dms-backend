@@ -12,6 +12,14 @@ public class PermissionService {
         CustomUserDetails user =
                 (CustomUserDetails) auth.getPrincipal();
 
+        // System admins can do everything
+        boolean isSystemAdmin = user.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_SYSTEM_ADMIN"));
+        
+        if (isSystemAdmin) {
+            return true;
+        }
+
         return user.getPermissions()
                 .getOrDefault(permission, false);
     }

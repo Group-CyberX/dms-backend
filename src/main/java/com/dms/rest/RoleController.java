@@ -22,14 +22,14 @@ public class RoleController {
 
     // Get all roles
     @GetMapping
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewRole')")
     public List<Role> getAllRoles() {
         return roleService.getAllRoles();
     }
 
     // Create role
     @PostMapping
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canCreateRole')")
     public Role createRole(@Valid @RequestBody CreateRoleRequest request) {
         return roleService.createRole(
                 request.getName(),
@@ -39,12 +39,19 @@ public class RoleController {
 
     // Update role permissions
     @PatchMapping("/{id}")
-    @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditRole')")
     public Role updateRole(@PathVariable UUID id,
                            @RequestBody CreateRoleRequest request) {
         return roleService.updateRole(
                 id,
                 request.getPermissions()
         );
+    }
+
+    // Delete role
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteRole')")
+    public void deleteRole(@PathVariable UUID id) {
+        roleService.deleteRole(id);
     }
 }
