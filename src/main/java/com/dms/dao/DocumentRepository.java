@@ -94,4 +94,37 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Transactional
     @Query("update Documents d set d.is_deleted = false, d.deleted_at = null where d.document_id = :id and d.owner_id = :ownerId")
     int restoreByIdAndOwner(@Param("id") UUID id, @Param("ownerId") UUID ownerId);
+
+    // New methods for folder tree slice
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update Documents d set d.folder_id = :targetFolderId where d.document_id in :documentIds and d.is_deleted = false")
+    int moveToFolder(@Param("documentIds") List<UUID> documentIds, @Param("targetFolderId") UUID targetFolderId);
+
+    @Query("select count(d) from Documents d where d.folder_id = :folderId and d.is_deleted = false")
+    long countActiveByFolder(@Param("folderId") UUID folderId);
+
+    @Query("select coalesce(sum(d.file_size), 0) from Documents d where d.folder_id = :folderId and d.is_deleted = false")
+    long sumFileSizeByFolder(@Param("folderId") UUID folderId);
+
+    @Query("select d.folder_id, count(d) from Documents d where d.is_deleted = false group by d.folder_id")
+    List<Object[]> countActiveByFolderGrouped();
+
+    @Query("select d.folder_id, coalesce(sum(d.file_size),0) from Documents d where d.is_deleted = false group by d.folder_id")
+    List<Object[]> sumFileSizeByFolderGrouped();
+
+    // Cascading folder delete: soft-delete every active document across a set of folder ids
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update Documents d set d.is_deleted = true, d.deleted_at = CURRENT_TIMESTAMP where d.folder_id in :folderIds and d.is_deleted = false")
+    int softDeleteByFolderIds(@Param("folderIds") List<UUID> folderIds);
+
+    // Cascading folder restore: bring back every document soft-deleted alongside that folder subtree
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update Documents d set d.is_deleted = false, d.deleted_at = null where d.folder_id in :folderIds and d.is_deleted = true")
+    int restoreByFolderIds(@Param("folderIds") List<UUID> folderIds);
+
+    @Query("select count(d) from Documents d where d.folder_id in :folderIds and d.is_deleted = true")
+    long countDeletedByFolderIds(@Param("folderIds") List<UUID> folderIds);
 }
