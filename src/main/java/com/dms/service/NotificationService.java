@@ -45,7 +45,7 @@ public class NotificationService {
         Notification notification = new Notification(userId, message, title);
 
         notification.setCreatedAt(java.time.LocalDateTime.now());
-        notification.setIsRead(false);
+        notification.setRead(false);
         notificationRepository.save(notification);
     }
 
@@ -54,20 +54,19 @@ public class NotificationService {
     }
 
     public List<Notification> getUserNotifications(UUID userId) {
-        // Updated method call
         return notificationRepository.findByUserIdAndIsDeletedFalseOrderByCreatedAtDesc(userId);
     }
 
     public List<Notification> getUnreadNotifications(UUID userId) {
-        // Updated method call
-        return notificationRepository.findByUserIdAndIsDeletedFalseOrderByCreatedAtDesc(userId);
+        // FIX: Now correctly queries only unread entries
+        return notificationRepository.findByUserIdAndIsReadFalseOrderByCreatedAtDesc(userId);
     }
 
     @Transactional
     public void markAsRead(UUID notificationId) {
         notificationRepository.findById(notificationId).ifPresent(notification -> {
-            notification.setIsRead(true); // Use the new explicit setter
-            notificationRepository.saveAndFlush(notification); // Use saveAndFlush to force it
+            notification.setRead(true);
+            notificationRepository.saveAndFlush(notification); // Forces database synchronization
         });
     }
 
@@ -78,8 +77,6 @@ public class NotificationService {
 
     @Transactional
     public void deleteNotification(UUID notificationId) {
-        // Instead of notificationRepository.deleteById(notificationId);
         notificationRepository.softDeleteById(notificationId);
     }
-
 }
