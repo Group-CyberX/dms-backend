@@ -59,6 +59,7 @@ public class WorkflowTemplateService {
         );
         template.setCreatedBy(request.getCreatedBy());
         template.setSystemTemplate(request.isSystemTemplate());
+        template.setRequiresSignature(request.isRequiresSignature());
         template.setCreatedAt(LocalDateTime.now());
 
         // Save template first
@@ -99,6 +100,7 @@ public class WorkflowTemplateService {
         );
         template.setCreatedBy(request.getCreatedBy());
         template.setSystemTemplate(request.isSystemTemplate());
+        template.setRequiresSignature(request.isRequiresSignature());
         template.setCreatedAt(template.getCreatedAt() == null ? LocalDateTime.now() : template.getCreatedAt());
 
         template = templateRepo.save(template);

@@ -3,11 +3,11 @@ package com.dms.rest;
 import com.dms.models.AuditLog;
 import com.dms.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -19,21 +19,41 @@ public class AdminAuditController {
         this.auditLogService = auditLogService;
     }
 
-    //Returns the full list of all activities in the system
+    /**
+     * One page of activity, newest first.
+     *
+     * This used to return the entire table. The audit trail is append-only, so
+     * that request got slower every day the system was used and there was no
+     * point at which it stopped growing.
+     */
     @GetMapping("/logs")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
-    public List<AuditLog> getAllLogs(){
-        return auditLogService.getAllLogs();
+    public Page<AuditLog> getAllLogs(@RequestParam(defaultValue = "0") int page,
+                                     @RequestParam(defaultValue = "25") int size,
+                                     @RequestParam(defaultValue = "false") boolean export,
+                                     HttpServletRequest request){
+
+        // Taking a copy of the trail is itself an event the trail should carry:
+        // it says who read the record of everyone else's activity, and when.
+        if (export) {
+            auditLogService.tryRecordCurrentUser("AUDIT_LOG_EXPORTED", null,
+                    request.getRemoteAddr(), "SUCCESS",
+                    "exported up to " + size + " audit records");
+        }
+
+        return auditLogService.getLogs(page, size);
     }
 
-    // The Filter Endpoint
+    // The Filter Endpoint - filtering happens in the database, not the browser.
     @GetMapping("/logs/filter")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
-    public List<AuditLog> getFilteredLogs(
+    public Page<AuditLog> getFilteredLogs(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String fromDate,
-            @RequestParam(required = false) String toDate) {
+            @RequestParam(required = false) String toDate,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
 
         // Convert strings to proper types or null
         UUID userUuid = (userId != null && !userId.isEmpty() && !userId.equals("all"))
@@ -48,19 +68,15 @@ public class AdminAuditController {
         LocalDateTime end = (toDate != null && !toDate.isEmpty())
                 ? LocalDateTime.parse(toDate + "T23:59:59") : null;
 
-        return auditLogService.getFilteredLogs(userUuid, actionParam, start, end);
+        return auditLogService.getFilteredLogs(userUuid, actionParam, start, end, page, size);
     }
 
-    //Allows other parts of the system to programmatically record a new event
-    @PostMapping("/logs")
-    @PreAuthorize("isAuthenticated()")
-    public AuditLog newLog(@RequestBody AuditLog auditLog, HttpServletRequest request){
-        auditLog.setIp(request.getRemoteAddr());
-        if (auditLog.getStatus() == null || auditLog.getStatus().isEmpty()){
-            auditLog.setStatus("Failed");
-        }
-        return auditLogService.saveLog(auditLog);
-    }
+    // There is deliberately no POST /logs. An audit trail is only evidence if
+    // nothing outside the system can write to it, so rows are created by the
+    // services that perform the action (AuditLogService.createAuditLog) and by
+    // nothing else. The endpoint that used to sit here accepted a fully
+    // caller-supplied AuditLog from any authenticated user, which meant the
+    // trail could be forged - see requirements 11.4.
 
 //    // Provides a list of all system users to populate the UI filter dropdown
 //    @GetMapping("/users")

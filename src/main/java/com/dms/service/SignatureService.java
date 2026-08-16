@@ -3,6 +3,7 @@ package com.dms.service;
 import com.dms.dto.UserSignatureRequest;
 import com.dms.models.UserSignature;
 import com.dms.dao.UserSignatureRepository;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
@@ -61,10 +62,18 @@ public class SignatureService {
         return userSignatureRepository.save(signature);
     }
 
+    /**
+     * Soft-delete, scoped to the owner. Deleting someone else's saved signature
+     * is refused rather than silently ignored, so the caller learns nothing
+     * about whether the id exists.
+     */
     @Transactional
-    public void softDeleteSignature(UUID signatureId) {
+    public void softDeleteSignature(UUID signatureId, UUID callerId) {
         userSignatureRepository.findByUserSignatureIdAndDeletedAtIsNull(signatureId)
                 .ifPresent(sig -> {
+                    if (!callerId.equals(sig.getUserId())) {
+                        throw new AccessDeniedException("A saved signature may only be deleted by its owner.");
+                    }
                     sig.setDeletedAt(OffsetDateTime.now());
                     sig.setDefault(false);
                     userSignatureRepository.save(sig);

@@ -9,7 +9,12 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity(name = "Documents")
-@Table(name = "\"Document\"")
+// The document list is always "not deleted, in this folder", and the owner
+// filter backs the per-user view.
+@Table(name = "\"Document\"", indexes = {
+        @Index(name = "idx_document_deleted_folder", columnList = "is_deleted, folder_id"),
+        @Index(name = "idx_document_owner", columnList = "owner_id")
+})
 public class Documents {
     @Id
     @Column(name = "document_id")
@@ -41,6 +46,20 @@ public class Documents {
 
     @Column(name = "is_deleted")
     private boolean is_deleted;
+
+    // ---- Edit lock -------------------------------------------------------
+    // Who currently holds the document for editing, and since when. The lock
+    // is treated as expired once it is older than the configured timeout, so
+    // these three fields plus is_locked describe the whole lock state.
+
+    @Column(name = "locked_by_user_id")
+    private UUID lockedByUserId;
+
+    @Column(name = "locked_by_username")
+    private String lockedByUsername;
+
+    @Column(name = "locked_at")
+    private LocalDateTime lockedAt;
 
    
 
@@ -151,6 +170,30 @@ public class Documents {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
+    }
+
+    public UUID getLockedByUserId() {
+        return lockedByUserId;
+    }
+
+    public void setLockedByUserId(UUID lockedByUserId) {
+        this.lockedByUserId = lockedByUserId;
+    }
+
+    public String getLockedByUsername() {
+        return lockedByUsername;
+    }
+
+    public void setLockedByUsername(String lockedByUsername) {
+        this.lockedByUsername = lockedByUsername;
+    }
+
+    public LocalDateTime getLockedAt() {
+        return lockedAt;
+    }
+
+    public void setLockedAt(LocalDateTime lockedAt) {
+        this.lockedAt = lockedAt;
     }
 
     

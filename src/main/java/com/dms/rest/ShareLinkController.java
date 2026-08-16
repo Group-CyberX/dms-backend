@@ -1,10 +1,12 @@
 package com.dms.rest;
 
 import com.dms.dto.CreateShareLinkRequest;
+import com.dms.dto.SaveAnnotatedVersionResponse;
 import com.dms.dto.ShareLinkResponse;
 import com.dms.models.ShareLink;
 import com.dms.models.User;
 import com.dms.dao.UserRepository;
+import com.dms.service.ShareAnnotationService;
 import com.dms.service.ShareLinkService;
 import lombok.RequiredArgsConstructor;
 
@@ -25,6 +27,27 @@ public class ShareLinkController {
 
     private final ShareLinkService service;
     private final UserRepository userRepository;
+    private final ShareAnnotationService shareAnnotationService;
+
+    /**
+     * Writes the review comments into the shared PDF and stores the result as a
+     * new document version. Only available on an EDIT-level link, and only to a
+     * signed-in reviewer.
+     */
+    @PostMapping("/{token}/save-version")
+    public ResponseEntity<SaveAnnotatedVersionResponse> saveAnnotatedVersion(
+            @PathVariable String token,
+            Authentication auth) throws java.io.IOException {
+
+        UUID userId = null;
+        if (auth != null && auth.isAuthenticated()) {
+            userId = userRepository.findByEmail(auth.getName())
+                    .map(User::getUserId)
+                    .orElse(null);
+        }
+
+        return ResponseEntity.ok(shareAnnotationService.saveAnnotatedVersion(token, userId));
+    }
 
     // Create share link
     @PostMapping

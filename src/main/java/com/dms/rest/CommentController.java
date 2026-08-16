@@ -1,6 +1,7 @@
 package com.dms.rest;
 
 import com.dms.dao.UserRepository;
+import com.dms.dto.AddCommentRequest;
 import com.dms.models.User;
 import com.dms.models.Comment;
 import com.dms.service.CommentService;
@@ -24,7 +25,7 @@ public class CommentController {
     @PostMapping("/{token}")
     public Comment add(
             @PathVariable String token,
-            @RequestBody Map<String, String> body,
+            @RequestBody AddCommentRequest request,
             Authentication auth
     ) {
 
@@ -40,12 +41,8 @@ public class CommentController {
             userId = user.getUserId();
         }
 
-        // Add comment with optional user ID (null for anonymous)
-        return service.addComment(
-                token,
-                userId,
-                body.get("content")
-        );
+        // The service rejects anonymous callers and view-only links.
+        return service.addComment(token, userId, request);
     }
 
     // Get all comments for a share link

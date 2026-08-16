@@ -1,5 +1,7 @@
 package com.dms.rest;
 
+import com.dms.dto.TaskContextResponse;
+import com.dms.dto.TaskSigningContextResponse;
 import com.dms.dto.WorkflowTaskActionRequest;
 import com.dms.models.WorkflowTask;
 import com.dms.service.WorkflowTaskService;
@@ -22,6 +24,23 @@ public class WorkflowTaskController {
     @GetMapping("/instance/{instanceId}")
     public List<WorkflowTask> getTasksByInstance(@PathVariable Long instanceId) {
         return workflowTaskService.getTasksByInstanceId(instanceId);
+    }
+
+    // Tells the UI whether this task needs a placed signature before approval,
+    // and which document to open for signing.
+    @GetMapping("/{taskId}/signing-context")
+    public TaskSigningContextResponse getSigningContext(@PathVariable Long taskId) {
+        return workflowTaskService.getSigningContext(taskId);
+    }
+
+    /**
+     * Everything the document page needs about one task: its status, the
+     * workflow's status, whether it is waiting on this caller, and the banner
+     * text. One request, in place of the several the page used to make.
+     */
+    @GetMapping("/{taskId}/context")
+    public TaskContextResponse getContext(@PathVariable Long taskId) {
+        return workflowTaskService.getTaskContext(taskId);
     }
 
     // Approve a task

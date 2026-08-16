@@ -20,6 +20,11 @@ public class CreateWorkflowRequest {
     private String workflowType;
     private List<String> approvers;
     private String createdByUserId;
+    /**
+     * Null means "inherit from the template" (or false for a manual workflow).
+     * An explicit true/false from the builder always wins.
+     */
+    private Boolean requiresSignature;
     private boolean saveAsTemplate;
 
     // Name of the new template (if saveAsTemplate = true)

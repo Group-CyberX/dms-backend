@@ -73,7 +73,7 @@ public class FolderTreeService {
             if (folderId != null) sizeMap.put(folderId, size);
         }
 
-        // Enrich nodes with direct document counts and sizes (not recursive total)
+        // Seed every node with the documents filed directly in it.
         dtoMap.values().forEach(node -> {
             node.setDocumentCount(countMap.getOrDefault(node.getFolder_id(), 0L));
             node.setTotalSize(sizeMap.getOrDefault(node.getFolder_id(), 0L));
@@ -86,9 +86,40 @@ public class FolderTreeService {
         syntheticRoot.setPath("");
         syntheticRoot.setParent_folder_id(null);
         syntheticRoot.setChildren(roots);
-        syntheticRoot.setDocumentCount(0);
-        syntheticRoot.setTotalSize(0);
+
+        // Roll the direct counts up the tree, so a folder reports everything
+        // filed anywhere beneath it. Counting only direct children made a
+        // parent whose documents all live in subfolders report 0, which read as
+        // an empty folder even though the files were right there one level down.
+        rollUpTotals(syntheticRoot, new HashSet<>());
         return syntheticRoot;
+    }
+
+    /**
+     * Adds each subtree's documents and bytes into its parent, depth first, and
+     * returns what the node ended up carrying.
+     *
+     * The visited set guards against a parent cycle produced by bad data: a
+     * cycle would otherwise recurse until the stack gave out, taking the whole
+     * folder tree endpoint down with it.
+     */
+    private long[] rollUpTotals(FolderTreeNodeDTO node, Set<UUID> visited) {
+        if (node.getFolder_id() != null && !visited.add(node.getFolder_id())) {
+            return new long[]{0L, 0L};
+        }
+
+        long documents = node.getDocumentCount();
+        long bytes = node.getTotalSize();
+
+        for (FolderTreeNodeDTO child : node.getChildren()) {
+            long[] fromChild = rollUpTotals(child, visited);
+            documents += fromChild[0];
+            bytes += fromChild[1];
+        }
+
+        node.setDocumentCount(documents);
+        node.setTotalSize(bytes);
+        return new long[]{documents, bytes};
     }
 
     public List<Folders> getDescendants(UUID folderId) {

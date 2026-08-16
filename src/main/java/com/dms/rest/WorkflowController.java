@@ -3,6 +3,7 @@ package com.dms.rest;
 import com.dms.dto.CreateWorkflowRequest;
 import com.dms.models.WorkflowInstance;
 import com.dms.service.WorkflowService;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class WorkflowController {
 
     // Create new workflow (manual or template-based)
     @PostMapping
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canCreateWorkflow')")
     public WorkflowInstance createWorkflow(@RequestBody CreateWorkflowRequest request) {
         return workflowService.createWorkflow(request);
     }

@@ -6,7 +6,10 @@ import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
-@Table(name = "notifications")
+// The bell reads unread notifications for one person.
+@Table(name = "notifications", indexes = {
+        @Index(name = "idx_notifications_user", columnList = "user_id")
+})
 public class Notification {
 
     @Id
