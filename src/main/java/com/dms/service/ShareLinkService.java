@@ -32,6 +32,8 @@ public class ShareLinkService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final DocumentVersionService documentVersionService;
+    private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
@@ -68,6 +70,10 @@ public class ShareLinkService {
                 .build();
 
         repository.save(shareLink);
+
+        // Sharing a document outside the system is exactly the kind of event an
+        // audit trail exists for.
+        auditLogService.tryRecord("SHARE_LINK_CREATED", userId, request.getDocumentId(), null, "SUCCESS");
 
         // Return response with share link details
         return ShareLinkResponse.builder()
@@ -122,6 +128,9 @@ public class ShareLinkService {
         
         link.setActive(false);
         repository.save(link);
+
+        auditLogService.tryRecord("SHARE_LINK_REVOKED", link.getCreatedBy(),
+                link.getDocumentId(), null, "SUCCESS");
     }
 
     // Handles accessing a share link
@@ -153,6 +162,15 @@ public class ShareLinkService {
 
         accessLogRepository.save(log);
 
+        auditLogService.tryRecord("SHARE_LINK_ACCESSED", userId, link.getDocumentId(), null, "SUCCESS");
+
+        // The owner should know their document was opened through a link, and
+        // by whom - the access log alone is not visible to them.
+        if (doc != null && doc.getOwner_id() != null && !doc.getOwner_id().equals(userId)) {
+            notificationService.sendNotification(doc.getOwner_id(),
+                    "Shared document '" + doc.getTitle() + "' was accessed via a share link");
+        }
+
         // Get the latest version of the document to extract the filename
         com.dms.models.DocumentVersions latestVersion = documentVersionRepository
                 .findByDocument_idOrderByCreated_atDesc(link.getDocumentId())
@@ -168,12 +186,27 @@ public class ShareLinkService {
             }
         }
 
-        // Return access details
+        // Return access details. accessLevel drives what the share page offers:
+        //   VIEW    - read and (if allowed) download only
+        //   COMMENT - may also annotate and discuss
+        //   EDIT    - may additionally save the annotations as a new version
+        AccessLevel accessLevel = link.getAccessLevel() != null ? link.getAccessLevel() : AccessLevel.VIEW;
+
         return Map.of(
                 "documentId", link.getDocumentId().toString(),
                 "documentName", doc != null && doc.getTitle() != null ? doc.getTitle() : "Document",
                 "allowDownload", link.isAllowDownload(),
                 "allowComments", link.isAllowComments(),
+                "accessLevel", accessLevel.name(),
+                // The "Allow comments" checkbox is the authority on commenting.
+                // It used to be ANDed with "level is not VIEW", which meant an
+                // owner who ticked the box on a View link was silently refused,
+                // with no explanation anywhere in the UI. An Edit link always
+                // implies commenting, since annotations are what it saves.
+                "canComment", link.isAllowComments() || accessLevel == AccessLevel.EDIT,
+                "canEdit", accessLevel == AccessLevel.EDIT,
+                "currentVersionId", doc != null && doc.getCurrent_version_id() != null
+                        ? doc.getCurrent_version_id().toString() : "",
                 "fileName", fileName != null ? fileName : (doc != null && doc.getTitle() != null ? doc.getTitle() : "document")
         );
     }
@@ -221,6 +254,11 @@ public class ShareLinkService {
             log.setAccessedAt(LocalDateTime.now());
 
             accessLogRepository.save(log);
+
+            // A copy leaving through a share link is the same compliance event
+            // as an internal download, and needs the same trail.
+            auditLogService.tryRecord("SHARE_LINK_DOWNLOADED", userId, link.getDocumentId(),
+                    null, "SUCCESS", "downloaded " + fileName + " via a share link");
 
             return ResponseEntity.ok()
                     .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")

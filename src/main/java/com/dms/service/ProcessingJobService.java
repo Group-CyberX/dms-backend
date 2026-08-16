@@ -21,6 +21,7 @@ public class ProcessingJobService {
     private final DocumentVersionRepository documentVersionRepository;
     private final MetadataExtractorService metadataExtractorService;
     private final DocumentVersionService documentVersionService; // Inject to download file
+    private final ErpDocumentLinkService erpDocumentLinkService;
 
     @Autowired
     @Lazy
@@ -29,11 +30,13 @@ public class ProcessingJobService {
     public ProcessingJobService(ProcessingJobRepository processingJobRepository,
                                 DocumentVersionRepository documentVersionRepository,
                                 MetadataExtractorService metadataExtractorService,
-                                @Lazy DocumentVersionService documentVersionService) {
+                                @Lazy DocumentVersionService documentVersionService,
+                                ErpDocumentLinkService erpDocumentLinkService) {
         this.processingJobRepository = processingJobRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.metadataExtractorService = metadataExtractorService;
         this.documentVersionService = documentVersionService;
+        this.erpDocumentLinkService = erpDocumentLinkService;
     }
 
     /**
@@ -92,6 +95,12 @@ public class ProcessingJobService {
             // 3. Set content and update document version
             version.setOcr_content(extractedText);
             documentVersionRepository.save(version);
+
+            // 4. ERP sync check: if the extracted text names a transaction we
+            //    already hold (a purchase order number, typically), attach the
+            //    document to it. This is step 5 of requirements section 8.1 and
+            //    never fails the job - linking is a bonus, not a precondition.
+            erpDocumentLinkService.tryLinkFromText(version.getDocument_id(), extractedText);
 
             // Mark job as SUCCESS
             job.setStatus("SUCCESS");

@@ -11,6 +11,7 @@ import com.dms.service.AuditLogService;
 import com.dms.service.FolderTreeService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
@@ -66,6 +67,7 @@ public class FolderController {
     }
 
     @PostMapping
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canCreateDocument')")
     public ResponseEntity<Folders> create(@RequestBody FolderCreateRequest request, HttpServletRequest httpReq) {
         Folders saved = folderTreeService.createFolder(request, httpReq.getRemoteAddr());
         auditLogService.createAuditLog("FOLDER_CREATED", saved.getFolder_id(), httpReq.getRemoteAddr(), "SUCCESS");
@@ -73,6 +75,7 @@ public class FolderController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditDocument')")
     public ResponseEntity<Folders> update(@PathVariable("id") UUID id, @RequestBody Folders update) {
         Optional<Folders> existingOpt = folderRepository.findById(id);
         if (existingOpt.isEmpty()) {
@@ -92,6 +95,7 @@ public class FolderController {
      * (soft delete). Nothing is permanently removed.
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteDocument')")
     public ResponseEntity<?> delete(@PathVariable("id") UUID id, HttpServletRequest httpReq) {
         if (!folderRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
@@ -106,6 +110,7 @@ public class FolderController {
      * along with every document that was soft-deleted inside any of them.
      */
     @PostMapping("/{id}/restore")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canRestoreRecycleBin')")
     public ResponseEntity<?> restore(@PathVariable("id") UUID id, HttpServletRequest httpReq) {
         if (!folderRepository.existsById(id)) {
             return ResponseEntity.notFound().build();

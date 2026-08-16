@@ -3,6 +3,8 @@ package com.dms.rest;
 import com.dms.models.DocumentMetadata;
 import com.dms.dto.MetadataRequestDTO;
 import com.dms.dto.MetadataResponseDTO;
+import com.dms.security.SecurityUtils;
+import com.dms.service.DocumentLockService;
 import com.dms.service.DocumentMetadataService;
 
 import org.springframework.http.ResponseEntity;
@@ -17,9 +19,17 @@ import java.util.stream.Collectors;
 public class DocumentMetadataController {
 
     private final DocumentMetadataService metadataService;
+    private final DocumentLockService documentLockService;
 
-    public DocumentMetadataController(DocumentMetadataService metadataService) {
+    public DocumentMetadataController(DocumentMetadataService metadataService,
+                                      DocumentLockService documentLockService) {
         this.metadataService = metadataService;
+        this.documentLockService = documentLockService;
+    }
+
+    /** Metadata is document content, so it follows the same edit lock as the file. */
+    private void assertNotLockedByOther(UUID documentId) {
+        documentLockService.assertCanMutate(documentId, SecurityUtils.currentUserId());
     }
 
     // =========================
@@ -34,6 +44,8 @@ public class DocumentMetadataController {
         if (request.getKey() == null || request.getValue() == null) {
             return ResponseEntity.badRequest().build();
         }
+
+        assertNotLockedByOther(documentId);
 
         DocumentMetadata metadata =
                 metadataService.addMetadata(documentId, request.getKey(), request.getValue());
@@ -53,6 +65,8 @@ public class DocumentMetadataController {
         if (requests == null || requests.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
+
+        assertNotLockedByOther(documentId);
 
         List<DocumentMetadata> metadataList =
                 metadataService.addMultipleMetadata(documentId, requests);
@@ -91,6 +105,8 @@ public class DocumentMetadataController {
             @PathVariable String key,
             @RequestBody MetadataRequestDTO request) {
 
+        assertNotLockedByOther(documentId);
+
         DocumentMetadata updated =
                 metadataService.updateMetadata(documentId, key, request.getValue());
 
@@ -106,6 +122,8 @@ public class DocumentMetadataController {
             @PathVariable UUID documentId,
             @PathVariable String key) {
 
+        assertNotLockedByOther(documentId);
+
         metadataService.deleteMetadata(documentId, key);
         return ResponseEntity.noContent().build();
     }
@@ -116,6 +134,8 @@ public class DocumentMetadataController {
 
     @DeleteMapping("/document/{documentId}")
     public ResponseEntity<Void> deleteAllMetadata(@PathVariable UUID documentId) {
+        assertNotLockedByOther(documentId);
+
         metadataService.deleteAllMetadata(documentId);
         return ResponseEntity.noContent().build();
     }

@@ -2,6 +2,8 @@ package com.dms.rest;
 
 import com.dms.dto.TagDTO;
 import com.dms.models.Tag;
+import com.dms.security.SecurityUtils;
+import com.dms.service.DocumentLockService;
 import com.dms.service.TagService;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,11 @@ import java.util.stream.Collectors;
 public class TagController {
 
     private final TagService tagService;
+    private final DocumentLockService documentLockService;
 
-    public TagController(TagService tagService) {
+    public TagController(TagService tagService, DocumentLockService documentLockService) {
         this.tagService = tagService;
+        this.documentLockService = documentLockService;
     }
 
     //Get all available tags (for dropdown/autocomplete)
@@ -47,6 +51,9 @@ public class TagController {
     public ResponseEntity<TagDTO> addTagToDocument(
             @PathVariable("documentId") UUID documentId,
             @RequestParam("tagName") String tagName) {
+        // Tags are document content, so they respect the same edit lock.
+        documentLockService.assertCanMutate(documentId, SecurityUtils.currentUserId());
+
         Tag tag = tagService.addTagToDocument(documentId, tagName);
         return ResponseEntity.ok(new TagDTO(tag.getTag_id(), tag.getTag_name()));
     }

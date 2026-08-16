@@ -9,9 +9,11 @@ import com.dms.models.WorkflowInstance;
 import com.dms.models.WorkflowTask;
 import com.dms.models.WorkflowTemplate;
 import com.dms.models.WorkflowTemplateStep;
+import com.dms.security.SecurityUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class WorkflowService {
@@ -21,6 +23,7 @@ public class WorkflowService {
     private final WorkflowTemplateStepRepository stepRepo;
     private final WorkflowTemplateService templateService;
     private final DocumentLifecycleService documentLifecycleService;
+    private final AuditLogService auditLogService;
 
     // Constructor injection of dependencies
     public WorkflowService(
@@ -28,13 +31,15 @@ public class WorkflowService {
             WorkflowTaskRepository taskRepo,
             WorkflowTemplateStepRepository stepRepo,
             WorkflowTemplateService templateService,
-            DocumentLifecycleService documentLifecycleService
+            DocumentLifecycleService documentLifecycleService,
+            AuditLogService auditLogService
     ) {
         this.instanceRepo = instanceRepo;
         this.taskRepo = taskRepo;
         this.stepRepo = stepRepo;
         this.templateService = templateService;
         this.documentLifecycleService = documentLifecycleService;
+        this.auditLogService = auditLogService;
     }
 
     // Main method to create workflow (manual or template-based)
@@ -101,6 +106,18 @@ public class WorkflowService {
                 : request.getWorkflowType());
         }
 
+        // Signature requirement: an explicit choice in the builder wins, otherwise
+        // inherit whatever the chosen template says. Captured on the instance so
+        // later template edits do not change workflows already running.
+        if (request.getRequiresSignature() != null) {
+            instance.setRequiresSignature(request.getRequiresSignature());
+        } else if (finalTemplateId != null) {
+            WorkflowTemplate template = templateService.getTemplateById(finalTemplateId);
+            instance.setRequiresSignature(template != null && template.requiresSignatureOrFalse());
+        } else {
+            instance.setRequiresSignature(Boolean.FALSE);
+        }
+
         // Default status
         instance.setStatus(WorkflowConstants.WORKFLOW_PENDING_APPROVAL);
         try {
@@ -137,6 +154,18 @@ public class WorkflowService {
             // Manual flow with ad-hoc approvers
             createTasksManual(instance, request.getApprovers(), instance.getWorkflowType());
         }
+
+        // Starting an approval is one of the events an auditor looks for; it was
+        // not being recorded anywhere.
+        UUID documentId = null;
+        try {
+            documentId = UUID.fromString(instance.getDocumentId().trim());
+        } catch (IllegalArgumentException ignored) {
+            // A workflow can carry a non-UUID document reference; the audit row
+            // is still worth writing without it.
+        }
+        auditLogService.tryRecord("WORKFLOW_CREATED", SecurityUtils.currentUserId(),
+                documentId, null, "SUCCESS");
 
         return instance;
     }

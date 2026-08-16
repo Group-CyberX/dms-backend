@@ -20,6 +20,14 @@ public class SecurityUtils {
     }
 
     public static UUID currentUserId() {
+        return currentUser().getUserId();
+    }
+
+    /**
+     * The authenticated user, resolved from the JWT subject. Callers that need
+     * the role as well as the id use this so they do not hit the database twice.
+     */
+    public static User currentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || auth.getPrincipal() == null) {
             throw new RuntimeException("Unauthenticated: no authentication present");
@@ -38,8 +46,7 @@ public class SecurityUtils {
             throw new RuntimeException("UserRepository not initialized in SecurityUtils");
         }
         final String lookupEmail = email;
-        User user = staticUserRepository.findByEmail(lookupEmail)
+        return staticUserRepository.findByEmail(lookupEmail)
                 .orElseThrow(() -> new RuntimeException("Authenticated user not found: " + lookupEmail));
-        return user.getUserId();
     }
 }

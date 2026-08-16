@@ -31,8 +31,11 @@ public class DigitalSignature {
     @Column(name = "algorithm", length = 50)
     private String algorithm;
 
-    @Lob
-    @Column(name = "tsa_token",columnDefinition = "bytea")
+    // No @Lob here: on PostgreSQL that maps byte[] to the "oid" large-object
+    // type, while the column is declared bytea - the insert then fails with
+    // "column tsa_token is of type bytea but expression is of type oid".
+    // Plain byte[] maps to bytea, which is what we want for an RFC 3161 token.
+    @Column(name = "tsa_token", columnDefinition = "bytea")
     private byte[] tsaToken;
 
     @Column(name = "status", length = 20, nullable = false)
