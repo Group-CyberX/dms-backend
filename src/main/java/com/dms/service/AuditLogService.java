@@ -1,7 +1,10 @@
 package com.dms.service;
 
 import com.dms.dao.AuditLogRepository;
+import com.dms.dao.UserRepository;
+import com.dms.dto.AuditLogResponse;
 import com.dms.models.AuditLog;
+import com.dms.models.User;
 import com.dms.security.SecurityUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -9,16 +12,22 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
 @Service
 public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
+    private final UserRepository userRepository;
 
-    public AuditLogService(AuditLogRepository auditLogRepository) {
+    public AuditLogService(AuditLogRepository auditLogRepository, UserRepository userRepository) {
         this.auditLogRepository = auditLogRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -106,18 +115,50 @@ public class AuditLogService {
     }
 
     /** One newest-first page, counted and sorted by the database. */
-    public Page<AuditLog> getLogs(int page, int size) {
-        return auditLogRepository.findAllByOrderByTimestampDesc(pageRequest(page, size));
+    public Page<AuditLogResponse> getLogs(int page, int size) {
+        return withUserNames(
+                auditLogRepository.findAllByOrderByTimestampDesc(pageRequest(page, size)));
     }
 
     /**
      * Filtered and paged in a single query. Filtering used to happen in the
      * browser, which meant downloading the whole table to look at twenty rows.
      */
-    public Page<AuditLog> getFilteredLogs(UUID userId, String action,
-                                          LocalDateTime fromDate, LocalDateTime toDate,
-                                          int page, int size) {
-        return auditLogRepository.findByFilters(userId, action, fromDate, toDate, pageRequest(page, size));
+    public Page<AuditLogResponse> getFilteredLogs(UUID userId, String action,
+                                                  LocalDateTime fromDate, LocalDateTime toDate,
+                                                  int page, int size) {
+        return withUserNames(
+                auditLogRepository.findByFilters(userId, action, fromDate, toDate, pageRequest(page, size)));
+    }
+
+    /**
+     * Attaches the actor's display name to each row on the page.
+     *
+     * Names are fetched once for the page rather than per row - a 500-row
+     * export would otherwise become 500 extra queries.
+     *
+     * A name can legitimately be missing in two ways, and the screen tells them
+     * apart by whether user_id is set: an event with no actor at all (a refused
+     * request, a failed login - nobody was authenticated to name), and an event
+     * whose actor has since been deleted. The trail keeps the id either way,
+     * because an audit record must not lose its actor when an account goes.
+     */
+    private Page<AuditLogResponse> withUserNames(Page<AuditLog> logs) {
+
+        Set<UUID> actorIds = logs.getContent().stream()
+                .map(AuditLog::getUser_id)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<UUID, String> names = actorIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(actorIds).stream()
+                        .filter(u -> u.getUsername() != null)
+                        .collect(Collectors.toMap(User::getUserId, User::getUsername, (a, b) -> a));
+
+        return logs.map(log -> AuditLogResponse.of(
+                log,
+                log.getUser_id() == null ? null : names.get(log.getUser_id())));
     }
 
     /**

@@ -1,6 +1,6 @@
 package com.dms.rest;
 
-import com.dms.models.AuditLog;
+import com.dms.dto.AuditLogResponse;
 import com.dms.service.AuditLogService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.data.domain.Page;
@@ -28,7 +28,7 @@ public class AdminAuditController {
      */
     @GetMapping("/logs")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
-    public Page<AuditLog> getAllLogs(@RequestParam(defaultValue = "0") int page,
+    public Page<AuditLogResponse> getAllLogs(@RequestParam(defaultValue = "0") int page,
                                      @RequestParam(defaultValue = "25") int size,
                                      @RequestParam(defaultValue = "false") boolean export,
                                      HttpServletRequest request){
@@ -47,7 +47,7 @@ public class AdminAuditController {
     // The Filter Endpoint - filtering happens in the database, not the browser.
     @GetMapping("/logs/filter")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewAuditLog')")
-    public Page<AuditLog> getFilteredLogs(
+    public Page<AuditLogResponse> getFilteredLogs(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String action,
             @RequestParam(required = false) String fromDate,

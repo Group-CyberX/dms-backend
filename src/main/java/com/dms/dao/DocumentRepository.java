@@ -132,6 +132,18 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select d.folder_id, coalesce(sum(d.file_size),0) from Documents d where d.is_deleted = false group by d.folder_id")
     List<Object[]> sumFileSizeByFolderGrouped();
 
+    // Owner-scoped versions of the two above.
+    //
+    // The folder tree needs these because its badges have to agree with the
+    // document list beside them, and that list is owner-scoped by default
+    // (findAllActiveByOwner). Counting every document in the system made a
+    // folder claim 26 files next to a list showing 3.
+    @Query("select d.folder_id, count(d) from Documents d where d.is_deleted = false and d.owner_id = :ownerId group by d.folder_id")
+    List<Object[]> countActiveByFolderGroupedForOwner(@Param("ownerId") UUID ownerId);
+
+    @Query("select d.folder_id, coalesce(sum(d.file_size),0) from Documents d where d.is_deleted = false and d.owner_id = :ownerId group by d.folder_id")
+    List<Object[]> sumFileSizeByFolderGroupedForOwner(@Param("ownerId") UUID ownerId);
+
     // Cascading folder delete: soft-delete every active document across a set of folder ids
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
