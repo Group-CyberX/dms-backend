@@ -155,6 +155,15 @@ public class WorkflowTemplateService {
         return stepRepo.findByTemplateIdOrderByStepOrderAsc(templateId);
     }
 
+    // Steps for a set of templates, so a screen listing templates can load them
+    // all in one request instead of one per row.
+    public List<WorkflowTemplateStep> getStepsForTemplates(List<Long> templateIds) {
+        if (templateIds == null || templateIds.isEmpty()) {
+            return List.of();
+        }
+        return stepRepo.findByTemplateIdInOrderByTemplateIdAscStepOrderAsc(templateIds);
+    }
+
     // Simple getter for template by id used by other services
     public WorkflowTemplate getTemplateById(Long templateId) {
         return templateRepo.findById(templateId).orElse(null);

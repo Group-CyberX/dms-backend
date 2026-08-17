@@ -70,4 +70,13 @@ public class WorkflowTemplateController {
     public List<WorkflowTemplateStep> getStepsByTemplateId(@PathVariable Long templateId) {
         return templateService.getStepsByTemplateId(templateId);
     }
+
+    /**
+     * Steps for several templates in one request, for screens that list
+     * templates and would otherwise ask for each one's steps separately.
+     */
+    @GetMapping("/steps")
+    public List<WorkflowTemplateStep> getStepsForTemplates(@RequestParam List<Long> templateIds) {
+        return templateService.getStepsForTemplates(templateIds);
+    }
 }

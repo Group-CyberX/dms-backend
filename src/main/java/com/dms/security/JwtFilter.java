@@ -59,6 +59,15 @@ public class JwtFilter extends OncePerRequestFilter {
                 // Load user details from database
                 UserDetails userDetails = customUserDetailsService.loadUserByUsername(email);
 
+                // A token issued before the account was deactivated or
+                // suspended must stop working immediately, so the account's
+                // current state is checked on every request rather than only
+                // at sign-in.
+                if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 // Create authentication object
                 UsernamePasswordAuthenticationToken authToken =
                         new UsernamePasswordAuthenticationToken(

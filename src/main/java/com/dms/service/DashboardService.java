@@ -87,7 +87,7 @@ public class DashboardService {
                 instanceRepository.countByStatusIgnoreCaseIn(List.of(WorkflowConstants.WORKFLOW_APPROVED)),
                 instanceRepository.countByCreatedByUserId(String.valueOf(userId)),
                 taskRepository.countByStatusIgnoreCaseInAndUserIdIgnoreCaseIn(OPEN_TASK_STATUSES, assignees),
-                notificationRepository.findByUserIdAndIsReadFalseOrderByCreatedAtDesc(userId).size(),
+                notificationRepository.countByUserIdAndIsReadFalse(userId),
                 erpConnectionRepository.count(),
                 auditLogRepository.count(),
                 auditLogRepository.countByStatusIgnoreCase("FAILED"),
