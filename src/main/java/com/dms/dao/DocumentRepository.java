@@ -1,20 +1,34 @@
 package com.dms.dao;
 
 import com.dms.models.Documents;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
- 
+
 public interface DocumentRepository extends JpaRepository<Documents, UUID> {
 
     @Query("select (count(d) > 0) from Documents d where d.is_deleted = false and d.title = :title and ((:folderId is null and d.folder_id is null) or d.folder_id = :folderId)")
     boolean existsByTitleInFolder(@Param("title") String title, @Param("folderId") UUID folderId);
+
+    /**
+     * Reads a document with a row-level write lock (SELECT ... FOR UPDATE).
+     * Used when acquiring the edit lock so two users clicking at the same moment
+     * cannot both be told they hold it.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Documents d where d.document_id = :id")
+    Optional<Documents> findByIdForUpdate(@Param("id") UUID id);
 
     // Search functionality - Search across document title and metadata
     @Query(value = """
@@ -118,6 +132,18 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
     @Query("select d.folder_id, coalesce(sum(d.file_size),0) from Documents d where d.is_deleted = false group by d.folder_id")
     List<Object[]> sumFileSizeByFolderGrouped();
 
+    // Owner-scoped versions of the two above.
+    //
+    // The folder tree needs these because its badges have to agree with the
+    // document list beside them, and that list is owner-scoped by default
+    // (findAllActiveByOwner). Counting every document in the system made a
+    // folder claim 26 files next to a list showing 3.
+    @Query("select d.folder_id, count(d) from Documents d where d.is_deleted = false and d.owner_id = :ownerId group by d.folder_id")
+    List<Object[]> countActiveByFolderGroupedForOwner(@Param("ownerId") UUID ownerId);
+
+    @Query("select d.folder_id, coalesce(sum(d.file_size),0) from Documents d where d.is_deleted = false and d.owner_id = :ownerId group by d.folder_id")
+    List<Object[]> sumFileSizeByFolderGroupedForOwner(@Param("ownerId") UUID ownerId);
+
     // Cascading folder delete: soft-delete every active document across a set of folder ids
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
@@ -132,4 +158,40 @@ public interface DocumentRepository extends JpaRepository<Documents, UUID> {
 
     @Query("select count(d) from Documents d where d.folder_id in :folderIds and d.is_deleted = true")
     long countDeletedByFolderIds(@Param("folderIds") List<UUID> folderIds);
+
+    // ---- Dashboard aggregates -------------------------------------------
+
+    @Query("select count(d) from Documents d where d.is_deleted = false")
+    long countActive();
+
+    @Query("select coalesce(sum(d.file_size), 0) from Documents d where d.is_deleted = false")
+    long sumFileSizeActive();
+
+    @Query("select count(d) from Documents d where d.is_deleted = true")
+    long countDeleted();
+
+    @Query("select count(d) from Documents d where d.is_deleted = false and d.owner_id = :ownerId")
+    long countActiveByOwner(@Param("ownerId") UUID ownerId);
+
+    /** Titles for a set of ids, so the SLA panel needs one query, not one per row. */
+    @Query("select d from Documents d where d.document_id in :ids")
+    List<Documents> findAllByIdIn(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * One page of the document list, with the title search and folder filter
+     * applied by the database. Passing ownerId restricts it to that person's
+     * documents; passing null returns everyone's, for the roles allowed to see
+     * them.
+     */
+    @Query("""
+            select d from Documents d
+            where d.is_deleted = false
+              and (:ownerId is null or d.owner_id = :ownerId)
+              and (:folderId is null or d.folder_id = :folderId)
+              and (:search is null or :search = '' or lower(d.title) like lower(concat('%', :search, '%')))
+            """)
+    Page<Documents> findPage(@Param("ownerId") UUID ownerId,
+                             @Param("folderId") UUID folderId,
+                             @Param("search") String search,
+                             Pageable pageable);
 }

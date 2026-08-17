@@ -4,7 +4,11 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "workflow_task")
+// Tasks are read per workflow instance, and per assignee for My Tasks.
+@Table(name = "workflow_task", indexes = {
+        @Index(name = "idx_workflow_task_instance", columnList = "instance_id"),
+        @Index(name = "idx_workflow_task_user", columnList = "user_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

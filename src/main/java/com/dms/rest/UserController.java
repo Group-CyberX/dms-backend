@@ -6,10 +6,12 @@ import com.dms.dto.UpdateUserRequest;
 import com.dms.models.User;
 import com.dms.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -22,10 +24,34 @@ public class UserController {
         this.userService = userService;
     }
 
+    // Unpaged list, still used by the approver and filter pickers where the
+    // whole set genuinely is the answer.
     @GetMapping
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewUser')")
     public List<User> getAllUsers() {
         return userService.getAllUsers();
+    }
+
+    /**
+     * One page of the directory for the management table. Search, status and
+     * role filtering all happen in the database, so the response is the size of
+     * the page the user is looking at and nothing more.
+     */
+    @GetMapping("/page")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewUser')")
+    public Page<User> getUsersPage(@RequestParam(required = false) String search,
+                                   @RequestParam(required = false) String status,
+                                   @RequestParam(required = false) String role,
+                                   @RequestParam(defaultValue = "0") int page,
+                                   @RequestParam(defaultValue = "10") int size) {
+        return userService.searchUsers(search, status, role, page, size);
+    }
+
+    /** Directory-wide totals for the header cards, counted in the database. */
+    @GetMapping("/stats")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewUser')")
+    public Map<String, Long> getUserStats() {
+        return userService.userStats();
     }
 
     @PostMapping("/users")

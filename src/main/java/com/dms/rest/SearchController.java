@@ -8,6 +8,7 @@ import com.dms.dto.SearchResponseDTO;
 import com.dms.models.SearchLog;
 import com.dms.security.SecurityUtils;
 import com.dms.service.SearchService;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -57,13 +58,19 @@ public class SearchController {
     }
 
     /**
-     * Advanced Search with multiple metadata filters
-     * Usage: POST /api/search/advanced with AdvancedSearchRequestDTO body
+     * Advanced Search with multiple metadata filters, one page at a time.
+     *
+     * Returns a page rather than the whole result set - the screen shows ten
+     * rows, so ten rows is what crosses the network. Paging in the browser did
+     * not save anything, because everything had already been downloaded to
+     * slice it.
      */
     @PostMapping("/advanced")
-    public ResponseEntity<List<SearchResponseDTO>> advancedSearch(@RequestBody AdvancedSearchRequestDTO filters) {
-        List<SearchResponseDTO> results = searchService.advancedSearch(filters);
-        return ResponseEntity.ok(results);
+    public ResponseEntity<Page<SearchResponseDTO>> advancedSearch(
+            @RequestBody AdvancedSearchRequestDTO filters,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(searchService.advancedSearch(filters, page, Math.min(Math.max(size, 1), 100)));
     }
 
     /**

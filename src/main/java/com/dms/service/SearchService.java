@@ -8,6 +8,10 @@ import com.dms.models.DocumentMetadata;
 import com.dms.models.Tag;
 import com.dms.dao.UserRepository;
 import com.dms.models.User;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import com.dms.dao.WorkflowInstanceRepository;
@@ -129,8 +133,26 @@ public class SearchService {
      * Advanced Search with multiple metadata filters
      */
     public List<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters) {
+        return advancedSearch(filters, 0, Integer.MAX_VALUE).getContent();
+    }
+
+    /**
+     * Advanced search, returning one page.
+     *
+     * Two costs were removed here. The status filter used to run a workflow
+     * query for every candidate document; now the latest status for the whole
+     * candidate set is read once. And only the rows on the requested page are
+     * turned into DTOs, so the per-row owner and tag lookups happen ten times
+     * instead of once per matching document.
+     *
+     * The metadata, owner and tag filters still run in Java, because they read
+     * joined metadata that the text query does not return. What changed is that
+     * they now run over a candidate set the database has already narrowed, and
+     * the response is bounded regardless of how many documents match.
+     */
+    public Page<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, int page, int size) {
         List<Documents> docs;
-        
+
         // 1. Initial filtered set using text query if present
         if (filters.getQuery() != null && !filters.getQuery().trim().isEmpty()) {
             docs = documentRepository.universalSearchIncludingTags(filters.getQuery().trim());
@@ -138,29 +160,78 @@ public class SearchService {
             docs = documentRepository.findAllActive();
         }
 
-        // 2. In-memory filtering for advanced metadata options
-        return docs.stream()
+        // One query for the workflow status of every candidate, instead of one
+        // query per candidate.
+        Map<UUID, String> statusByDocument = latestWorkflowStatuses(docs);
+
+        // 2. Filtering for advanced metadata options
+        List<Documents> matches = docs.stream()
                 .filter(doc -> matchesMetadata(doc, "documentType", filters.getDocumentType()))
-                .filter(doc -> {
-                    String filterVal = filters.getStatus();
-                    if (filterVal == null || filterVal.trim().isEmpty() || filterVal.startsWith("All") || filterVal.startsWith("Any")) {
-                        return true;
-                    }
-                    String actualStatus = getDocumentWorkflowStatus(doc.getDocument_id());
-                    if (actualStatus == null && doc.getMetadata() != null) {
-                        actualStatus = doc.getMetadata().stream()
-                            .filter(m -> m.getKey().equalsIgnoreCase("status"))
-                            .map(DocumentMetadata::getValue)
-                            .findFirst().orElse(null);
-                    }
-                    return actualStatus != null && actualStatus.equalsIgnoreCase(filterVal);
-                })
+                .filter(doc -> matchesStatus(doc, filters.getStatus(), statusByDocument))
                 .filter(doc -> matchesMetadata(doc, "signatureStatus", filters.getSignatureStatus()))
                 .filter(doc -> matchesOwner(doc, filters.getOwner()))
                 .filter(doc -> matchesDateRange(doc, filters.getDateRange()))
                 .filter(doc -> matchesTags(doc, filters.getTags()))
+                .toList();
+
+        int safeSize = Math.max(size, 1);
+        int safePage = Math.max(page, 0);
+        int from = Math.min((int) Math.min((long) safePage * safeSize, Integer.MAX_VALUE), matches.size());
+        int to = (safeSize == Integer.MAX_VALUE) ? matches.size() : Math.min(from + safeSize, matches.size());
+
+        List<SearchResponseDTO> content = matches.subList(from, to).stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+
+        Pageable pageable = PageRequest.of(safePage, safeSize == Integer.MAX_VALUE ? Math.max(matches.size(), 1) : safeSize);
+        return new PageImpl<>(content, pageable, matches.size());
+    }
+
+    /** Latest workflow status per document, read in a single query. */
+    private Map<UUID, String> latestWorkflowStatuses(List<Documents> docs) {
+        if (docs.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> documentIds = docs.stream()
+                .map(d -> d.getDocument_id().toString())
+                .toList();
+
+        Map<UUID, WorkflowInstance> latest = new HashMap<>();
+        for (WorkflowInstance instance : workflowInstanceRepository.findByDocumentIdIn(documentIds)) {
+            UUID documentId;
+            try {
+                documentId = UUID.fromString(instance.getDocumentId());
+            } catch (IllegalArgumentException | NullPointerException ex) {
+                continue;   // a workflow row with a malformed document id
+            }
+            WorkflowInstance current = latest.get(documentId);
+            if (current == null || (instance.getId() != null && current.getId() != null
+                    && instance.getId() > current.getId())) {
+                latest.put(documentId, instance);
+            }
+        }
+
+        Map<UUID, String> statuses = new HashMap<>();
+        latest.forEach((documentId, instance) -> statuses.put(documentId, instance.getStatus()));
+        return statuses;
+    }
+
+    /** Status filter, reading the pre-loaded workflow statuses. */
+    private boolean matchesStatus(Documents doc, String filterVal, Map<UUID, String> statusByDocument) {
+        if (filterVal == null || filterVal.trim().isEmpty()
+                || filterVal.startsWith("All") || filterVal.startsWith("Any")) {
+            return true;
+        }
+
+        String actualStatus = statusByDocument.get(doc.getDocument_id());
+        if (actualStatus == null && doc.getMetadata() != null) {
+            actualStatus = doc.getMetadata().stream()
+                    .filter(m -> m.getKey().equalsIgnoreCase("status"))
+                    .map(DocumentMetadata::getValue)
+                    .findFirst().orElse(null);
+        }
+        return actualStatus != null && actualStatus.equalsIgnoreCase(filterVal);
     }
 
     private boolean matchesMetadata(Documents doc, String metaKey, String filterValue) {

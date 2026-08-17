@@ -12,6 +12,7 @@ public class CreateWorkflowTemplateRequest {
     private String workflowType;
     private String createdBy;
     private boolean systemTemplate;
+    private boolean requiresSignature;
     private List<StepApprover> stepApprovers;
 
     // Inner DTO representing each step's approver details

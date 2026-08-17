@@ -2,6 +2,7 @@ package com.dms.service;
 
 import com.dms.dao.RoleRepository;
 import com.dms.models.Role;
+import com.dms.security.SecurityUtils;
 import com.dms.security.PermissionCatalog;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,8 +19,10 @@ public class RoleService {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final RoleRepository roleRepository;
+    private final AuditLogService auditLogService;
 
-    public RoleService(RoleRepository roleRepository) {
+    public RoleService(RoleRepository roleRepository, AuditLogService auditLogService) {
+        this.auditLogService = auditLogService;
         this.roleRepository = roleRepository;
     }
 
@@ -40,7 +43,10 @@ public class RoleService {
         role.setName(name.toUpperCase());
         role.setPermissions(canonicalizePermissions(permissions));
 
-        return roleRepository.save(role);
+        Role saved = roleRepository.save(role);
+        auditLogService.tryRecord("ROLE_CREATED", SecurityUtils.currentUserId(),
+                saved.getRoleId(), null, "SUCCESS");
+        return saved;
     }
 
     //  Update role permissions
@@ -51,7 +57,12 @@ public class RoleService {
 
         role.setPermissions(canonicalizePermissions(permissions));
 
-        return roleRepository.save(role);
+        Role saved = roleRepository.save(role);
+        // Changing a role changes what every holder of it may do, so this is
+        // one of the most important rows in the trail.
+        auditLogService.tryRecord("ROLE_PERMISSIONS_CHANGED", SecurityUtils.currentUserId(),
+                saved.getRoleId(), null, "SUCCESS");
+        return saved;
     }
 
     /**
@@ -112,5 +123,7 @@ public class RoleService {
             throw new RuntimeException("Role not found");
         }
         roleRepository.deleteById(roleId);
+        auditLogService.tryRecord("ROLE_DELETED", SecurityUtils.currentUserId(),
+                roleId, null, "SUCCESS");
     }
 }
