@@ -40,9 +40,20 @@ public class FolderController {
         return folderRepository.findAllActive();
     }
 
+    /**
+     * The folder tree with per-folder document counts.
+     *
+     * The {@code all} flag means the same thing here as on GET /api/documents,
+     * and defaults the same way (false - only your own documents). That is
+     * deliberate: the counts render as badges beside that list, so the two
+     * endpoints have to be asked the same question or the page contradicts
+     * itself. It used to, reporting 101 documents beside a list of 3.
+     */
     @GetMapping("/tree")
-    public FolderTreeNodeDTO getTree() {
-        return folderTreeService.getFullTree();
+    public FolderTreeNodeDTO getTree(
+            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all) {
+        UUID ownerId = all ? null : com.dms.security.SecurityUtils.currentUserId();
+        return folderTreeService.getFullTree(ownerId);
     }
 
     /** Recycle bin listing: one row per deleted folder subtree. */

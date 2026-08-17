@@ -10,6 +10,8 @@ import com.dms.models.DigitalSignature;
 import com.dms.models.DocumentVersions;
 import com.dms.models.Documents;
 import com.dms.util.InMemoryMultipartFile;
+import com.dms.util.PdfBytes;
+import com.dms.util.StoredFilename;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,6 +85,16 @@ public class DocumentSigningService {
 
         // 1. Pull the bytes of the version being signed.
         byte[] original = documentVersionService.getVersionFileBytes(request.documentId(), currentVersionId);
+
+        // Signatures are stamped with PDFBox, so the stored file has to be a
+        // real PDF. The workspace checks this before letting anyone place a
+        // signature, but that is the browser's copy of the rule - by the time
+        // an approval arrives here the file may have been replaced, and a
+        // caller need not have gone through the workspace at all.
+        if (!PdfBytes.looksLikePdf(original)) {
+            throw new IllegalStateException(
+                    "Only PDF documents can be signed. The stored file for this document is not a PDF.");
+        }
 
         // 2. Burn the signatures in.
         byte[] stamped = stampingService.stamp(original, request.placements());
@@ -161,12 +173,12 @@ public class DocumentSigningService {
         }
     }
 
+    /**
+     * What the signed copy is stored as. See {@link StoredFilename} - a title
+     * is free text, and the version store will not accept it unaltered.
+     */
     private String buildSignedFilename(String title) {
-        String base = (title == null || title.isBlank()) ? "document" : title;
-        if (base.toLowerCase().endsWith(".pdf")) {
-            base = base.substring(0, base.length() - 4);
-        }
-        return base + "-signed.pdf";
+        return StoredFilename.derivedPdf(title, "signed");
     }
 
     private String sha256Hex(byte[] data) {

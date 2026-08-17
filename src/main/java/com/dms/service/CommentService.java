@@ -4,19 +4,27 @@ import com.dms.dao.CommentRepository;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.ShareAccessLogRepository;
 import com.dms.dao.ShareLinkRepository;
+import com.dms.dao.UserRepository;
 import com.dms.dto.AddCommentRequest;
+import com.dms.dto.CommentResponse;
 import com.dms.enums.AccessLevel;
 import com.dms.models.Comment;
 import com.dms.models.Documents;
 import com.dms.models.ShareAccessLog;
 import com.dms.models.ShareLink;
+import com.dms.models.User;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +34,7 @@ public class CommentService {
     private final ShareAccessLogRepository logRepository;
     private final ShareLinkRepository shareLinkRepository;
     private final DocumentRepository documentRepository;
+    private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
 
@@ -108,9 +117,37 @@ public class CommentService {
         return saved;
     }
 
-    // Get all comments for a share link
-    public List<Comment> getComments(String token) {
-        return repository.findByTokenAndIsDeletedFalse(token);
+    /**
+     * All live comments on a share link, told from the caller's point of view.
+     *
+     * The caller's id decides the {@code mine} flag, which is what the share
+     * page uses to decide whether to offer Edit and Delete. Author names are
+     * looked up in one query rather than per comment, so a busy review thread
+     * does not turn into a row of round trips.
+     */
+    public List<CommentResponse> getComments(String token, UUID currentUserId) {
+
+        List<Comment> comments = repository.findByTokenAndIsDeletedFalse(token);
+
+        Set<UUID> authorIds = comments.stream()
+                .map(Comment::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        // A user row with no username would make Collectors.toMap throw, so
+        // those are dropped and fall back to the generic label on the page.
+        Map<UUID, String> names = authorIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(authorIds).stream()
+                        .filter(u -> u.getUsername() != null)
+                        .collect(Collectors.toMap(User::getUserId, User::getUsername, (a, b) -> a));
+
+        return comments.stream()
+                .map(c -> CommentResponse.of(
+                        c,
+                        c.getUserId() == null ? null : names.get(c.getUserId()),
+                        currentUserId))
+                .collect(Collectors.toList());
     }
 
     // Edit existing comment (only owner allowed)
@@ -119,12 +156,19 @@ public class CommentService {
         Comment comment = repository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
 
-        // only owner can edit
-        if (!comment.getUserId().equals(userId)) {
-            throw new RuntimeException("Not allowed to edit this comment");
+        // Only the owner can edit. Compared from the caller's id, which the
+        // controller has already established is non-null - an unowned comment
+        // has no owner to match, so it is refused rather than crashing.
+        if (!userId.equals(comment.getUserId())) {
+            // 403 rather than the catch-all 500, so the page can say why.
+            throw new AccessDeniedException("Not allowed to edit this comment");
         }
 
-        comment.setContent(content);
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("Comment cannot be empty");
+        }
+
+        comment.setContent(content.trim());
         comment.setUpdatedAt(LocalDateTime.now());
         comment.setLastEditedBy(userId);
 
@@ -143,8 +187,8 @@ public class CommentService {
                 .orElseThrow(() -> new RuntimeException("Comment not found"));
 
         // only owner can delete
-        if (!comment.getUserId().equals(userId)) {
-            throw new RuntimeException("Not allowed to delete this comment");
+        if (!userId.equals(comment.getUserId())) {
+            throw new AccessDeniedException("Not allowed to delete this comment");
         }
 
         comment.setDeleted(true);
