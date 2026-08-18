@@ -84,38 +84,17 @@ public class FolderTreeService {
                 ? documentRepository.sumFileSizeByFolderGrouped()
                 : documentRepository.sumFileSizeByFolderGroupedForOwner(ownerId);
 
-        // Two kinds of document have no node in this tree to be counted against,
-        // and both were being dropped - so "All Documents" reported fewer than the
-        // list beside it actually showed:
-        //
-        //   - a null folder id, which is not a folder that went missing but the
-        //     documents sitting at the top level, filed in nothing;
-        //   - a folder id that is no longer active, which is a live document left
-        //     behind by a deleted folder.
-        //
-        // Both belong to the root, which is where the document list shows them.
-        long rootDocuments = 0L;
-        long rootBytes = 0L;
-
         Map<UUID, Long> countMap = new HashMap<>();
         for (Object[] row : countRows) {
             UUID folderId = (UUID) row[0];
-            long count = row[1] == null ? 0L : ((Number) row[1]).longValue();
-            if (folderId == null || !dtoMap.containsKey(folderId)) {
-                rootDocuments += count;
-            } else {
-                countMap.put(folderId, count);
-            }
+            Long count = (Long) row[1];
+            if (folderId != null) countMap.put(folderId, count);
         }
         Map<UUID, Long> sizeMap = new HashMap<>();
         for (Object[] row : sizeRows) {
             UUID folderId = (UUID) row[0];
-            long size = row[1] == null ? 0L : ((Number) row[1]).longValue();
-            if (folderId == null || !dtoMap.containsKey(folderId)) {
-                rootBytes += size;
-            } else {
-                sizeMap.put(folderId, size);
-            }
+            Long size = (Long) row[1];
+            if (folderId != null) sizeMap.put(folderId, size);
         }
 
         // Seed every node with the documents filed directly in it.
@@ -131,8 +110,6 @@ public class FolderTreeService {
         syntheticRoot.setPath("");
         syntheticRoot.setParent_folder_id(null);
         syntheticRoot.setChildren(roots);
-        syntheticRoot.setDocumentCount(rootDocuments);
-        syntheticRoot.setTotalSize(rootBytes);
 
         // Roll the direct counts up the tree, so a folder reports everything
         // filed anywhere beneath it. Counting only direct children made a
@@ -297,12 +274,7 @@ public class FolderTreeService {
         return result;
     }
 
-    /**
-     * Moves documents into a folder. A null ownerId moves whichever documents
-     * were asked for; anything else restricts the move to that person's own, so
-     * ids belonging to someone else are silently skipped rather than obeyed.
-     */
-    public int moveDocuments(MoveDocumentsRequest req, String actorIp, UUID ownerId) {
+    public int moveDocuments(MoveDocumentsRequest req, String actorIp) {
         if (req.getDocumentIds() == null || req.getDocumentIds().isEmpty() || req.getTargetFolderId() == null) {
             auditLogService.createAuditLog("DOCUMENTS_MOVED", null, actorIp, "FAILED");
             throw new IllegalArgumentException("documentIds and targetFolderId are required");
@@ -311,9 +283,7 @@ public class FolderTreeService {
         folderRepository.findById(req.getTargetFolderId())
                 .orElseThrow(() -> new IllegalArgumentException("Target folder not found"));
 
-        int moved = ownerId == null
-                ? documentRepository.moveToFolder(req.getDocumentIds(), req.getTargetFolderId())
-                : documentRepository.moveToFolderForOwner(req.getDocumentIds(), req.getTargetFolderId(), ownerId);
+        int moved = documentRepository.moveToFolder(req.getDocumentIds(), req.getTargetFolderId());
         auditLogService.createAuditLog("DOCUMENTS_MOVED", req.getTargetFolderId(), actorIp, "SUCCESS");
         return moved;
     }

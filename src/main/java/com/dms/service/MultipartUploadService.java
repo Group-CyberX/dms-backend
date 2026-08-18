@@ -1,6 +1,5 @@
 package com.dms.service;
 
-import com.dms.constants.WorkflowConstants;
 import com.dms.dao.*;
 import com.dms.dto.DocumentUploadResponse;
 import com.dms.dto.MultipartUploadInitResponse;
@@ -263,7 +262,6 @@ public class MultipartUploadService {
         document.setFile_size(session.getTotalSize());
         document.setIs_locked(false);
         document.setIs_deleted(false);
-        document.setStatus(WorkflowConstants.DOCUMENT_NEW);
         documentRepository.save(document);
 
         // Create DocumentVersion

@@ -9,11 +9,9 @@ import com.dms.dto.FolderTreeNodeDTO;
 import com.dms.models.Folders;
 import com.dms.service.AuditLogService;
 import com.dms.service.FolderTreeService;
-import com.dms.service.PermissionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
@@ -28,16 +26,13 @@ public class FolderController {
     private final FolderRepository folderRepository;
     private final FolderTreeService folderTreeService;
     private final AuditLogService auditLogService;
-    private final PermissionService permissionService;
 
     public FolderController(FolderRepository folderRepository,
                             FolderTreeService folderTreeService,
-                            AuditLogService auditLogService,
-                            PermissionService permissionService) {
+                            AuditLogService auditLogService) {
         this.folderRepository = folderRepository;
         this.folderTreeService = folderTreeService;
         this.auditLogService = auditLogService;
-        this.permissionService = permissionService;
     }
 
     @GetMapping
@@ -49,18 +44,15 @@ public class FolderController {
      * The folder tree with per-folder document counts.
      *
      * The {@code all} flag means the same thing here as on GET /api/documents,
-     * defaults the same way (false - only your own documents) and is granted by
-     * the same permission. That is deliberate: the counts render as badges
-     * beside that list, so the two endpoints have to be asked the same question
-     * or the page contradicts itself. It used to, reporting 101 documents
-     * beside a list of 3.
+     * and defaults the same way (false - only your own documents). That is
+     * deliberate: the counts render as badges beside that list, so the two
+     * endpoints have to be asked the same question or the page contradicts
+     * itself. It used to, reporting 101 documents beside a list of 3.
      */
     @GetMapping("/tree")
     public FolderTreeNodeDTO getTree(
-            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all,
-            Authentication auth) {
-        boolean canSeeAll = permissionService.hasPermission(auth, "canViewAllDocuments");
-        UUID ownerId = (all && canSeeAll) ? null : com.dms.security.SecurityUtils.currentUserId();
+            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all) {
+        UUID ownerId = all ? null : com.dms.security.SecurityUtils.currentUserId();
         return folderTreeService.getFullTree(ownerId);
     }
 
