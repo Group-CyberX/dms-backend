@@ -115,6 +115,31 @@ public class ErpDocumentLinkService {
     }
 
     /**
+     * Instantly links a document when the exact reference is provided by the client (e.g. from ERP).
+     */
+    @Transactional
+    public Optional<DocumentErpLink> linkExactReference(UUID documentId, String reference) {
+        if (documentId == null || reference == null || reference.isBlank()) {
+            return Optional.empty();
+        }
+        
+        try {
+            // Check if already linked
+            if (!linkRepository.findByDocumentId(documentId).isEmpty()) {
+                return Optional.empty();
+            }
+
+            Optional<ErpTransaction> match = transactionRepository.findByExternalRefIgnoreCase(normalise(reference));
+            if (match.isPresent()) {
+                return Optional.of(createLink(documentId, match.get(), reference, "AUTO", null));
+            }
+        } catch (Exception e) {
+            System.err.println("ERP exact-link failed for document " + documentId + ": " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Re-checks every active document that has no ERP link yet. Run after a
      * sync, so transactions that arrive later still pick up documents uploaded
      * earlier.

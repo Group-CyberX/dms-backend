@@ -33,8 +33,7 @@ public class ErpSyncService {
 
     /** ERP path -> the transaction type we store records under. */
     private static final Map<String, String> ENDPOINTS = Map.of(
-            "/purchase-orders", "PURCHASE_ORDER",
-            "/invoices", "INVOICE"
+            "/purchase-orders", "PURCHASE_ORDER"
     );
 
     private final ErpConnectionRepository connectionRepository;
