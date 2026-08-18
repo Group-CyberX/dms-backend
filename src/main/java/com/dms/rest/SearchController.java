@@ -7,12 +7,9 @@ import com.dms.dto.SearchLogRequestDTO;
 import com.dms.dto.SearchResponseDTO;
 import com.dms.models.SearchLog;
 import com.dms.security.SecurityUtils;
-import com.dms.service.PermissionService;
 import com.dms.service.SearchService;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,24 +24,11 @@ public class SearchController {
     private final SearchService searchService;
     private final SearchLogRepository searchLogRepository;
     private final com.dms.dao.UserRepository userRepository;
-    private final PermissionService permissionService;
 
-    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository, com.dms.dao.UserRepository userRepository, PermissionService permissionService) {
+    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository, com.dms.dao.UserRepository userRepository) {
         this.searchService = searchService;
         this.searchLogRepository = searchLogRepository;
         this.userRepository = userRepository;
-        this.permissionService = permissionService;
-    }
-
-    /**
-     * How far a search may reach. canSearchAllDocuments is what opens it to the
-     * whole library; without it a search only ever returns the caller's own
-     * documents, which is the same rule the document list follows.
-     */
-    private UUID searchScopeOwnerId(Authentication auth) {
-        return permissionService.hasPermission(auth, "canSearchAllDocuments")
-                ? null
-                : SecurityUtils.currentUserId();
     }
 
     /**
@@ -52,13 +36,11 @@ public class SearchController {
      * Usage: GET /api/search?query=searchTerm
      */
     @GetMapping
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewSearch')")
-    public ResponseEntity<List<SearchResponseDTO>> search(@RequestParam String query,
-                                                          Authentication auth) {
+    public ResponseEntity<List<SearchResponseDTO>> search(@RequestParam String query) {
         if (query == null || query.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        List<SearchResponseDTO> results = searchService.universalSearch(query, searchScopeOwnerId(auth));
+        List<SearchResponseDTO> results = searchService.universalSearch(query);
         return ResponseEntity.ok(results);
     }
 
@@ -67,13 +49,11 @@ public class SearchController {
      * Usage: GET /api/search/tags?tag=tagName
      */
     @GetMapping("/tags")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewSearch')")
-    public ResponseEntity<List<SearchResponseDTO>> searchByTag(@RequestParam String tag,
-                                                               Authentication auth) {
+    public ResponseEntity<List<SearchResponseDTO>> searchByTag(@RequestParam String tag) {
         if (tag == null || tag.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        List<SearchResponseDTO> results = searchService.searchByTag(tag, searchScopeOwnerId(auth));
+        List<SearchResponseDTO> results = searchService.searchByTag(tag);
         return ResponseEntity.ok(results);
     }
 
@@ -86,14 +66,11 @@ public class SearchController {
      * slice it.
      */
     @PostMapping("/advanced")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'canAdvancedSearchSearch')")
     public ResponseEntity<Page<SearchResponseDTO>> advancedSearch(
             @RequestBody AdvancedSearchRequestDTO filters,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            Authentication auth) {
-        return ResponseEntity.ok(searchService.advancedSearch(
-                filters, page, Math.min(Math.max(size, 1), 100), searchScopeOwnerId(auth)));
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(searchService.advancedSearch(filters, page, Math.min(Math.max(size, 1), 100)));
     }
 
     /**
@@ -145,8 +122,7 @@ public class SearchController {
      * Usage: GET /api/search/options
      */
     @GetMapping("/options")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewSearch')")
-    public ResponseEntity<Map<String, List<String>>> getFilterOptions(Authentication auth) {
+    public ResponseEntity<Map<String, List<String>>> getFilterOptions() {
         Map<String, List<String>> options = new HashMap<>();
         
         // Document types
@@ -171,23 +147,13 @@ public class SearchController {
             "Active"
         ));
         
-        // Owner filters. Offering every active user to someone who can only
-        // search their own documents both leaks the user directory and lists
-        // filters that can never match, so the list follows the search scope.
-        if (searchScopeOwnerId(auth) == null) {
-            options.put("owners", userRepository.findAll().stream()
-                    .filter(u -> "ACTIVE".equals(u.getStatus()))
-                    .map(com.dms.models.User::getUsername)
-                    .sorted(String.CASE_INSENSITIVE_ORDER)
-                    .toList()
-            );
-        } else {
-            options.put("owners", userRepository.findById(SecurityUtils.currentUserId())
-                    .map(com.dms.models.User::getUsername)
-                    .map(List::of)
-                    .orElseGet(List::of)
-            );
-        }
+        // Owner filters (load active users)
+        options.put("owners", userRepository.findAll().stream()
+                .filter(u -> "ACTIVE".equals(u.getStatus()))
+                .map(com.dms.models.User::getUsername)
+                .sorted(String.CASE_INSENSITIVE_ORDER)
+                .toList()
+        );
         
         // Signature statuses
         options.put("signatureStatuses", List.of(

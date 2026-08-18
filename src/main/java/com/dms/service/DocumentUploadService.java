@@ -1,6 +1,5 @@
 package com.dms.service;
 
-import com.dms.constants.WorkflowConstants;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.DocumentVersionRepository;
 import com.dms.dao.FolderRepository;
@@ -226,7 +225,6 @@ public class DocumentUploadService {
             document.setFile_size(file.getSize());
             document.setIs_locked(false);
             document.setIs_deleted(false);
-            document.setStatus(WorkflowConstants.DOCUMENT_NEW);
 
             document = documentRepository.save(document);
 

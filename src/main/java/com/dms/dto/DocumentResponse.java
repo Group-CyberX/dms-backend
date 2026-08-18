@@ -15,13 +15,12 @@ public class DocumentResponse {
     private Long file_size;
     private boolean is_locked;
     private boolean is_deleted;
-    private String status;
 
     public DocumentResponse() {
     }
 
     public DocumentResponse(UUID document_id, String title, UUID owner_id, String owner_name, UUID folder_id,
-                       UUID current_version_id, LocalDateTime created_at, LocalDateTime deleted_at, Long file_size, boolean is_locked, boolean is_deleted, String status) {
+                       UUID current_version_id, LocalDateTime created_at, LocalDateTime deleted_at, Long file_size, boolean is_locked, boolean is_deleted) {
         this.document_id = document_id;
         this.title = title;
         this.owner_id = owner_id;
@@ -33,7 +32,6 @@ public class DocumentResponse {
         this.file_size = file_size;
         this.is_locked = is_locked;
         this.is_deleted = is_deleted;
-        this.status = status;
     }
 
     public UUID getDocument_id() {
@@ -122,13 +120,5 @@ public class DocumentResponse {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
     }
 }
