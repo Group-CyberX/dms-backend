@@ -1,5 +1,6 @@
 package com.dms.rest;
 
+import com.dms.constants.WorkflowConstants;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.UserRepository;
 import com.dms.dto.DocumentLockStatusResponse;
@@ -12,6 +13,7 @@ import com.dms.service.AuditLogService;
 import com.dms.service.DocumentLockService;
 import com.dms.service.DocumentUploadService;
 import com.dms.service.NotificationService;
+import com.dms.service.PermissionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -46,19 +48,22 @@ public class DocumentController {
     private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final DocumentLockService documentLockService;
+    private final PermissionService permissionService;
 
     public DocumentController(DocumentRepository documentRepository,
                               DocumentUploadService documentUploadService,
                               AuditLogService auditLogService,
                               NotificationService notificationService,
                               UserRepository userRepository,
-                              DocumentLockService documentLockService) {
+                              DocumentLockService documentLockService,
+                              PermissionService permissionService) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
         this.documentLockService = documentLockService;
+        this.permissionService = permissionService;
     }
 
     // ------------------------------------------------------------------
@@ -95,7 +100,30 @@ public class DocumentController {
         return documentLockService.status(id, com.dms.security.SecurityUtils.currentUserId());
     }
 
+    /**
+     * Whose documents a caller may list. Everyone sees their own; canViewAllDocuments
+     * is what lets a role see what the rest of the organisation has uploaded, and
+     * asking for the wider scope without it simply falls back to the caller's own.
+     */
+    private UUID listScopeOwnerId(Authentication auth, boolean all) {
+        boolean canSeeAll = permissionService.hasPermission(auth, "canViewAllDocuments");
+        return (all && canSeeAll) ? null : com.dms.security.SecurityUtils.currentUserId();
+    }
+
+    /**
+     * Whether the caller may change documents belonging to other people.
+     *
+     * Deliberately its own permission rather than being inferred from
+     * canViewAllDocuments and canEditDocument together: a role given sight of
+     * the whole library so it can route uploads would otherwise silently gain
+     * the power to edit and delete everything in it.
+     */
+    private boolean canManageAcrossOwners(Authentication auth) {
+        return permissionService.hasPermission(auth, "canManageAllDocuments");
+    }
+
     @GetMapping
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewDocument')")
     public List<DocumentResponse> getAll(
             Authentication auth,
             @RequestParam(value = "all", required = false, defaultValue = "false") boolean all) {
@@ -103,16 +131,15 @@ public class DocumentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        List<Documents> docs;
-        if (all) {
-            docs = documentRepository.findAllActive();
-        } else {
-            docs = documentRepository.findAllActiveByOwner(
-                    com.dms.security.SecurityUtils.currentUserId());
-        }
+        UUID ownerId = listScopeOwnerId(auth, all);
+        List<Documents> docs = ownerId == null
+                ? documentRepository.findAllActive()
+                : documentRepository.findAllActiveByOwner(ownerId);
 
+        // One lookup for every owner on the list rather than one per document.
+        Map<UUID, String> ownerNames = ownerNames(docs);
         return docs.stream()
-                .map(this::convertToDTO)
+                .map(doc -> convertToDTO(doc, ownerNames))
                 .collect(Collectors.toList());
     }
 
@@ -125,8 +152,10 @@ public class DocumentController {
      * lookup for every document it converted.
      */
     @GetMapping("/page")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewDocument')")
     public Page<DocumentResponse> listPage(@RequestParam(defaultValue = "false") boolean all,
                                            @RequestParam(required = false) UUID folderId,
+                                           @RequestParam(required = false) String status,
                                            @RequestParam(required = false) String search,
                                            @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "10") int size,
@@ -135,18 +164,42 @@ public class DocumentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        UUID ownerId = all ? null : com.dms.security.SecurityUtils.currentUserId();
+        UUID ownerId = listScopeOwnerId(auth, all);
         String term = (search == null || search.isBlank()) ? null : search.trim();
+        String statusFilter = (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
 
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "created_at"));
 
-        Page<Documents> documents = documentRepository.findPage(ownerId, folderId, term, pageable);
+        Page<Documents> documents = documentRepository.findPage(ownerId, folderId, statusFilter, term, pageable);
 
         Map<UUID, String> ownerNames = ownerNames(documents.getContent());
         return documents.map(doc -> convertToDTO(doc, ownerNames));
+    }
+
+    /**
+     * How many documents sit at each status, for the filter chips above the list.
+     * Scoped the same way the list is, so the counts always match what the chips
+     * actually open.
+     */
+    @GetMapping("/status-counts")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewDocument')")
+    public Map<String, Long> statusCounts(@RequestParam(defaultValue = "false") boolean all,
+                                          Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        Map<String, Long> counts = new HashMap<>();
+        for (Object[] row : documentRepository.countByStatusGrouped(listScopeOwnerId(auth, all))) {
+            // Documents predating the status column group under NEW, which is where
+            // an unrouted document belongs anyway.
+            String status = row[0] == null ? WorkflowConstants.DOCUMENT_NEW : row[0].toString();
+            counts.merge(status, ((Number) row[1]).longValue(), Long::sum);
+        }
+        return counts;
     }
 
     /** Owner names for a page of documents, in one query. */
@@ -177,7 +230,8 @@ public class DocumentController {
         return new DocumentResponse(
                 doc.getDocument_id(), doc.getTitle(), doc.getOwner_id(), ownerName,
                 doc.getFolder_id(), doc.getCurrent_version_id(), doc.getCreated_at(),
-                doc.getDeleted_at(), doc.getFile_size(), doc.isIs_locked(), doc.isIs_deleted());
+                doc.getDeleted_at(), doc.getFile_size(), doc.isIs_locked(), doc.isIs_deleted(),
+                doc.getStatus());
     }
 
     private DocumentResponse convertToDTO(Documents doc) {
@@ -205,7 +259,8 @@ public class DocumentController {
                 doc.getDeleted_at(),
                 doc.getFile_size(),
                 doc.isIs_locked(),
-                doc.isIs_deleted()
+                doc.isIs_deleted(),
+                doc.getStatus()
         );
     }
 
@@ -230,10 +285,17 @@ public class DocumentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        return documentRepository.findAllDeletedByOwner(
-                        com.dms.security.SecurityUtils.currentUserId())
-                .stream()
-                .map(this::convertToDTO)
+        // The recycle bin has its own scope permission: seeing everyone's deleted
+        // documents is a decision about the bin, not a side effect of being able
+        // to edit documents across owners.
+        List<Documents> deleted = permissionService.hasPermission(auth, "canViewAllDeletedDocuments")
+                ? documentRepository.findAllDeleted()
+                : documentRepository.findAllDeletedByOwner(
+                        com.dms.security.SecurityUtils.currentUserId());
+
+        Map<UUID, String> ownerNames = ownerNames(deleted);
+        return deleted.stream()
+                .map(doc -> convertToDTO(doc, ownerNames))
                 .collect(Collectors.toList());
     }
 
@@ -252,6 +314,9 @@ public class DocumentController {
         }
         doc.setIs_deleted(false);
         doc.setOwner_id(com.dms.security.SecurityUtils.currentUserId());
+        if (doc.getStatus() == null || doc.getStatus().isBlank()) {
+            doc.setStatus(WorkflowConstants.DOCUMENT_NEW);
+        }
 
         Documents saved = documentRepository.save(doc);
         String ip = getClientIp(request);
@@ -313,9 +378,12 @@ public class DocumentController {
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditDocument')")
     public ResponseEntity<DocumentResponse> update(@PathVariable("id") UUID id,
                                                    @RequestBody Documents update,
-                                                   HttpServletRequest request) {
+                                                   HttpServletRequest request,
+                                                   Authentication auth) {
         UUID userId = com.dms.security.SecurityUtils.currentUserId();
-        Optional<Documents> existingOpt = documentRepository.findActiveByIdAndOwner(id, userId);
+        Optional<Documents> existingOpt = canManageAcrossOwners(auth)
+                ? documentRepository.findActiveById(id)
+                : documentRepository.findActiveByIdAndOwner(id, userId);
         String ip = getClientIp(request);
 
         if (existingOpt.isEmpty()) {
@@ -343,9 +411,12 @@ public class DocumentController {
     @DeleteMapping("/{id}")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteDocument')")
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id,
-                                       HttpServletRequest request) {
+                                       HttpServletRequest request,
+                                       Authentication auth) {
         String ip = getClientIp(request);
-        int updated = documentRepository.softDeleteByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+        int updated = canManageAcrossOwners(auth)
+                ? documentRepository.softDeleteById(id)
+                : documentRepository.softDeleteByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
 
         if (updated == 0) {
             auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "FAILED");
@@ -360,9 +431,12 @@ public class DocumentController {
     @PostMapping("/{id}/restore")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canRestoreRecycleBin')")
     public ResponseEntity<Void> restore(@PathVariable("id") UUID id,
-                                        HttpServletRequest request) {
+                                        HttpServletRequest request,
+                                        Authentication auth) {
         String ip = getClientIp(request);
-        int updated = documentRepository.restoreByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+        int updated = canManageAcrossOwners(auth)
+                ? documentRepository.restoreById(id)
+                : documentRepository.restoreByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
 
         if (updated == 0) {
             auditLogService.createAuditLog("DOCUMENT_RESTORED", id, ip, "FAILED");

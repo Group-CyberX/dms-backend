@@ -56,12 +56,13 @@ public class RolePermissionSeeder {
             // Document policies, retention and compliance across the library.
             "DOCUMENT_ADMIN", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument", "canCreateDocument", "canEditDocument",
-                    "canDeleteDocument", "canShareDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments", "canCreateDocument", "canEditDocument",
+                    "canDeleteDocument", "canShareDocument", "canManageAllDocuments",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewTask",
                     "canViewWorkflow",
-                    "canViewRecycleBin", "canRestoreRecycleBin", "canPermanentlyDeleteRecycleBin",
+                    "canViewRecycleBin", "canViewAllDeletedDocuments",
+                    "canRestoreRecycleBin", "canPermanentlyDeleteRecycleBin",
                     "canViewAuditLog", "canExportAuditLog",
                     "canViewPolicy", "canCreatePolicy", "canEditPolicy", "canDeletePolicy",
                     "canViewSetting", "canEditSetting", "canManageDocumentPolicySetting"),
@@ -71,8 +72,8 @@ public class RolePermissionSeeder {
             // who can alter the system cannot credibly audit it.
             "AUDITOR", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewWorkflow",
                     "canViewAuditLog", "canExportAuditLog",
                     "canViewERPIntegration",
@@ -80,11 +81,13 @@ public class RolePermissionSeeder {
                     "canViewSetting"),
 
             // Designs workflows and approval chains, so it needs to list users
-            // in order to choose approvers.
+            // in order to choose approvers, and to see the uploads waiting to be
+            // routed rather than only its own.
             "BUSINESS_PROCESS_OWNER", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument", "canCreateDocument", "canEditDocument", "canShareDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments", "canCreateDocument",
+                    "canEditDocument", "canShareDocument",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewTask", "canCreateTask", "canEditTask", "canDeleteTask",
                     "canViewWorkflow", "canCreateWorkflow", "canApproveWorkflow",
                     "canEditWorkflow", "canDeleteWorkflow",
@@ -102,14 +105,16 @@ public class RolePermissionSeeder {
                     "canViewWorkflow", "canApproveWorkflow",
                     "canViewSetting", "canEditSetting"),
 
-            // Everyday use: create, collaborate, submit for approval.
+            // Everyday use: create and collaborate. Uploading is where this role's
+            // part ends - the approval chain is chosen by whoever triages the
+            // upload, so it can follow a workflow but not start one.
             "USER", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
                     "canViewDocument", "canCreateDocument", "canEditDocument",
                     "canDeleteDocument", "canShareDocument",
                     "canViewSearch", "canAdvancedSearchSearch",
                     "canViewTask",
-                    "canViewWorkflow", "canCreateWorkflow",
+                    "canViewWorkflow",
                     "canViewRecycleBin", "canRestoreRecycleBin",
                     "canViewSetting", "canEditSetting")
     );

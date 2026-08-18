@@ -13,7 +13,8 @@ import java.util.UUID;
 // filter backs the per-user view.
 @Table(name = "\"Document\"", indexes = {
         @Index(name = "idx_document_deleted_folder", columnList = "is_deleted, folder_id"),
-        @Index(name = "idx_document_owner", columnList = "owner_id")
+        @Index(name = "idx_document_owner", columnList = "owner_id"),
+        @Index(name = "idx_document_status", columnList = "is_deleted, status")
 })
 public class Documents {
     @Id
@@ -46,6 +47,11 @@ public class Documents {
 
     @Column(name = "is_deleted")
     private boolean is_deleted;
+
+    // Where the document sits in the approval lifecycle: NEW from upload until
+    // someone routes it into a workflow, then whatever that workflow reports.
+    @Column(name = "status")
+    private String status;
 
     // ---- Edit lock -------------------------------------------------------
     // Who currently holds the document for editing, and since when. The lock
@@ -170,6 +176,14 @@ public class Documents {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public UUID getLockedByUserId() {
