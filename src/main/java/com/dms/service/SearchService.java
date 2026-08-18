@@ -108,10 +108,17 @@ public class SearchService {
     }
 
     /**
-     * Universal search across title, metadata, and tags
+     * Universal search across title, metadata, and tags.
+     *
+     * ownerId is the search scope: a user id restricts the search to that
+     * person's documents, null searches the whole library. It is resolved from
+     * canSearchAllDocuments by the controller, and applied by the database - a
+     * search that fetched everything and then hid rows would still have read
+     * every document in the system.
      */
-    public List<SearchResponseDTO> universalSearch(String searchTerm) {
-        List<Documents> results = documentRepository.universalSearchIncludingTags(searchTerm);
+    public List<SearchResponseDTO> universalSearch(String searchTerm, UUID ownerId) {
+        List<Documents> results = documentRepository.universalSearchIncludingTags(
+                searchTerm, ownerId == null ? null : ownerId.toString());
 
         return results.stream()
                 .map(this::mapToDTO)
@@ -119,21 +126,15 @@ public class SearchService {
     }
 
     /**
-     * Search documents by tag name
+     * Search documents by tag name, within the given scope.
      */
-    public List<SearchResponseDTO> searchByTag(String tagName) {
-        List<Documents> results = documentRepository.searchByTag(tagName);
+    public List<SearchResponseDTO> searchByTag(String tagName, UUID ownerId) {
+        List<Documents> results = documentRepository.searchByTag(
+                tagName, ownerId == null ? null : ownerId.toString());
 
         return results.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * Advanced Search with multiple metadata filters
-     */
-    public List<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters) {
-        return advancedSearch(filters, 0, Integer.MAX_VALUE).getContent();
     }
 
     /**
@@ -150,14 +151,20 @@ public class SearchService {
      * they now run over a candidate set the database has already narrowed, and
      * the response is bounded regardless of how many documents match.
      */
-    public Page<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, int page, int size) {
+    public Page<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, int page, int size,
+                                                  UUID ownerId) {
         List<Documents> docs;
 
-        // 1. Initial filtered set using text query if present
+        // 1. Initial filtered set using text query if present. The scope is
+        // applied here, on the candidate set the database returns, so an
+        // unscoped user never reads another person's documents at all.
         if (filters.getQuery() != null && !filters.getQuery().trim().isEmpty()) {
-            docs = documentRepository.universalSearchIncludingTags(filters.getQuery().trim());
+            docs = documentRepository.universalSearchIncludingTags(
+                    filters.getQuery().trim(), ownerId == null ? null : ownerId.toString());
         } else {
-            docs = documentRepository.findAllActive();
+            docs = ownerId == null
+                    ? documentRepository.findAllActive()
+                    : documentRepository.findAllActiveByOwner(ownerId);
         }
 
         // One query for the workflow status of every candidate, instead of one

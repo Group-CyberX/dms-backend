@@ -18,13 +18,16 @@ public final class PermissionCatalog {
             "canViewAnalyticsDashboard",
 
             "canViewDocument",
+            "canViewAllDocuments",
             "canCreateDocument",
             "canEditDocument",
             "canDeleteDocument",
             "canShareDocument",
+            "canManageAllDocuments",
 
             "canViewSearch",
             "canAdvancedSearchSearch",
+            "canSearchAllDocuments",
 
             "canViewTask",
             "canCreateTask",
@@ -38,6 +41,7 @@ public final class PermissionCatalog {
             "canDeleteWorkflow",
 
             "canViewRecycleBin",
+            "canViewAllDeletedDocuments",
             "canRestoreRecycleBin",
             "canPermanentlyDeleteRecycleBin",
 

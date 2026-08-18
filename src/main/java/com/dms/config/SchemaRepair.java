@@ -39,6 +39,7 @@ public class SchemaRepair {
             repointDocumentErpLinkFk();
             dropOrphanedDocumentVersionsTable();
             dropOrphanedErpExternalIdColumn();
+            backfillDocumentStatus();
         } catch (Exception e) {
             // A failed repair must not stop the application from serving: the
             // rest of the system works, and the operator needs the log more
@@ -232,6 +233,47 @@ public class SchemaRepair {
         jdbc.execute("alter table erp_transactions drop column external_erp_id");
         log.info("Schema repair: dropped the unused NOT NULL column "
                 + "erp_transactions.external_erp_id. ERP sync will now store transactions.");
+    }
+
+    /**
+     * Gives documents that predate the status column the status they already
+     * appear to have.
+     *
+     * Approval state used to live only on the workflow, and the document list
+     * read it back from {@code workflow_instance} on every load. Now that a
+     * document carries its own status, existing rows would otherwise all read as
+     * NEW and a library of settled documents would resurface as unhandled work.
+     * So the status is taken from each document's most recent workflow, and only
+     * documents that never had one become NEW.
+     *
+     * Runs once: as soon as any row has a status, there is nothing to derive.
+     */
+    private void backfillDocumentStatus() {
+        if (!columnExists("Document", "status")) {
+            return;
+        }
+
+        Integer alreadySet = jdbc.queryForObject(
+                "select count(*) from \"Document\" where status is not null", Integer.class);
+        if (alreadySet != null && alreadySet > 0) {
+            return;
+        }
+
+        int fromWorkflows = 0;
+        if (tableExists("workflow_instance")) {
+            fromWorkflows = jdbc.update(
+                    "update \"Document\" d set status = w.status "
+                            + "from (select distinct on (document_id) document_id, status "
+                            + "        from workflow_instance order by document_id, id desc) w "
+                            + "where d.document_id::text = w.document_id");
+        }
+
+        int asNew = jdbc.update("update \"Document\" set status = 'NEW' where status is null");
+
+        if (fromWorkflows > 0 || asNew > 0) {
+            log.info("Document status backfilled: {} from their latest workflow, {} as NEW.",
+                    fromWorkflows, asNew);
+        }
     }
 
     private boolean columnExists(String table, String column) {
