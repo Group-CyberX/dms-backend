@@ -12,6 +12,8 @@ import com.dms.models.DocumentVersions;
 import com.dms.models.Documents;
 import com.dms.models.ShareLink;
 import com.dms.util.InMemoryMultipartFile;
+import com.dms.util.PdfBytes;
+import com.dms.util.StoredFilename;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -97,7 +99,7 @@ public class ShareAnnotationService {
         // entirely, and without this check PDFBox fails deep inside the parser
         // with "Missing root object specification in trailer" - a 500 that tells
         // the reviewer nothing about what went wrong or what to do about it.
-        if (!looksLikePdf(original)) {
+        if (!PdfBytes.looksLikePdf(original)) {
             throw new IllegalStateException(
                     "Only PDF documents can be annotated. The stored file for this document is not a PDF.");
         }
@@ -119,14 +121,6 @@ public class ShareAnnotationService {
                 comments.size());
     }
 
-    /** Every PDF begins with the five bytes %PDF-, whatever it is named. */
-    private boolean looksLikePdf(byte[] bytes) {
-        if (bytes == null || bytes.length < 5) {
-            return false;
-        }
-        return bytes[0] == '%' && bytes[1] == 'P' && bytes[2] == 'D' && bytes[3] == 'F' && bytes[4] == '-';
-    }
-
     /** Maps author ids to display names for the labels drawn into the PDF. */
     private Map<String, String> displayNames(List<Comment> comments) {
         Map<String, String> names = new HashMap<>();
@@ -140,11 +134,8 @@ public class ShareAnnotationService {
         return names;
     }
 
+    /** What the annotated copy is stored as. See {@link StoredFilename}. */
     private String buildFilename(String title) {
-        String base = (title == null || title.isBlank()) ? "document" : title;
-        if (base.toLowerCase().endsWith(".pdf")) {
-            base = base.substring(0, base.length() - 4);
-        }
-        return base + "-reviewed.pdf";
+        return StoredFilename.derivedPdf(title, "reviewed");
     }
 }

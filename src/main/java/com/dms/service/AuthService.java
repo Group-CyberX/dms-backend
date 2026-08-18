@@ -14,7 +14,9 @@ import com.dms.dao.RefreshTokenRepository;
 import com.dms.models.RefreshToken;
 
 import com.dms.util.PermissionUtil;
+import com.dms.security.CustomUserDetails;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -74,6 +76,22 @@ public class AuthService {
         );
     }
     //Login
+    /**
+     * Rejects any account that is not ACTIVE, recording the attempt.
+     *
+     * INACTIVE covers a deactivated ex-employee, SUSPENDED a temporarily
+     * blocked account; neither may hold a session.
+     */
+    private void requireActive(User user) {
+        String status = user.getStatus();
+        if (status == null || CustomUserDetails.STATUS_ACTIVE.equalsIgnoreCase(status)) {
+            return;
+        }
+
+        auditLogService.tryRecord("LOGIN_BLOCKED_INACTIVE", user.getUserId(), null, null, "FAILED");
+        throw new DisabledException("This account is not active. Contact your administrator.");
+    }
+
     public LoginResponse login(LoginRequest request) {
 
         // Same message for "no such user" and "wrong password" so the endpoint
@@ -94,6 +112,16 @@ public class AuthService {
             auditLogService.tryRecord("LOGIN_FAILED", user.getUserId(), null, null, "FAILED");
             throw new BadCredentialsException("Invalid email or password");
         }
+
+        // Only an active account may sign in. Login authenticates by comparing
+        // the hash directly rather than going through the AuthenticationManager,
+        // so the UserDetails account flags are never consulted here and the
+        // check has to be explicit - without it, deactivating a user in the
+        // admin screen did not stop them signing in.
+        //
+        // Checked after the password, so the distinct message cannot be used to
+        // discover which accounts exist.
+        requireActive(user);
 
         // Generate access token
         String accessToken = jwtUtil.generateToken(
@@ -249,6 +277,10 @@ public class AuthService {
         }
 
         User user = token.getUser();
+
+        // Deactivating an account must also end the sessions it already has,
+        // otherwise a held refresh token keeps minting access tokens.
+        requireActive(user);
 
         // Generate new access token
         String newAccessToken = jwtUtil.generateToken(

@@ -29,7 +29,23 @@ public class FolderTreeService {
         this.auditLogService = auditLogService;
     }
 
-    public FolderTreeNodeDTO getFullTree() {
+    /**
+     * The folder tree, with the document counts and sizes each folder holds.
+     *
+     * @param ownerId count only this user's documents, or null to count
+     *                everyone's. It is not optional by accident: the badges in
+     *                the sidebar sit directly beside the document list, and the
+     *                two have to be answering the same question. They were not -
+     *                the list is owner-scoped by default while these counts were
+     *                always global, so a folder showed 26 next to a list of 3.
+     *
+     *                Whoever calls this has to say which scope they are showing.
+     *                An earlier attempt at per-user counts was reverted because
+     *                it undercounted against an unscoped list; making the scope
+     *                an explicit argument is what stops the two drifting apart
+     *                again in either direction.
+     */
+    public FolderTreeNodeDTO getFullTree(UUID ownerId) {
         List<Folders> all = folderRepository.findAllActive();
 
         Map<UUID, FolderTreeNodeDTO> dtoMap = all.stream().map(f -> {
@@ -59,15 +75,23 @@ public class FolderTreeService {
             }
         }
 
-        // Aggregate document counts and total sizes (batch)
+        // Aggregate document counts and total sizes (batch), in the caller's scope.
+        List<Object[]> countRows = ownerId == null
+                ? documentRepository.countActiveByFolderGrouped()
+                : documentRepository.countActiveByFolderGroupedForOwner(ownerId);
+
+        List<Object[]> sizeRows = ownerId == null
+                ? documentRepository.sumFileSizeByFolderGrouped()
+                : documentRepository.sumFileSizeByFolderGroupedForOwner(ownerId);
+
         Map<UUID, Long> countMap = new HashMap<>();
-        for (Object[] row : documentRepository.countActiveByFolderGrouped()) {
+        for (Object[] row : countRows) {
             UUID folderId = (UUID) row[0];
             Long count = (Long) row[1];
             if (folderId != null) countMap.put(folderId, count);
         }
         Map<UUID, Long> sizeMap = new HashMap<>();
-        for (Object[] row : documentRepository.sumFileSizeByFolderGrouped()) {
+        for (Object[] row : sizeRows) {
             UUID folderId = (UUID) row[0];
             Long size = (Long) row[1];
             if (folderId != null) sizeMap.put(folderId, size);

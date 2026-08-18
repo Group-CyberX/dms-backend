@@ -5,6 +5,7 @@ import com.dms.dao.WorkflowInstanceRepository;
 import com.dms.dao.WorkflowTaskRepository;
 import com.dms.dao.UserRepository;
 import com.dms.dao.WorkflowTemplateRepository;
+import com.dms.dto.MyTaskRowResponse;
 import com.dms.dto.TaskContextResponse;
 import com.dms.dto.TaskSigningContextResponse;
 import com.dms.dto.WorkflowTaskActionRequest;
@@ -49,6 +50,55 @@ public class WorkflowTaskService {
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
+    }
+
+    // ---- My Tasks --------------------------------------------------------
+
+    /**
+     * Every row the My Tasks screen shows for the signed-in user, resolved in a
+     * single query.
+     *
+     * Assignment is recorded either as a user id or as a role name, so both are
+     * passed to the query; matching on the id alone would hide role-assigned
+     * tasks from the person expected to action them.
+     */
+    public List<MyTaskRowResponse> getMyTasks() {
+        User user = SecurityUtils.currentUser();
+        String roleName = user.getRole() != null ? user.getRole().getName() : "";
+
+        return taskRepo.findMyTasks(user.getUserId().toString(), roleName)
+                .stream()
+                .map(this::toMyTaskRow)
+                .toList();
+    }
+
+    private MyTaskRowResponse toMyTaskRow(WorkflowTaskRepository.MyTaskRow row) {
+        return new MyTaskRowResponse(
+                row.getTaskId(),
+                row.getStepOrder(),
+                row.getStatus(),
+                row.getActionComment(),
+                row.getWorkflowId(),
+                row.getWorkflowName(),
+                row.getWorkflowStatus(),
+                row.getDueDate(),
+                row.getPriority(),
+                row.getTemplateId(),
+                Boolean.TRUE.equals(row.getRequiresSignature()),
+                row.getDocumentId(),
+                firstPresent(row.getDocumentTitle(), "Untitled Document"),
+                // The step's configured approver reads best; fall back to the
+                // account name, then to whatever is stored - which for older
+                // rows is a role name or a placeholder such as TEMP_USER.
+                firstPresent(row.getStepApproverName(),
+                        firstPresent(row.getAssigneeName(), row.getAssigneeUserId())),
+                firstPresent(row.getCreatedByName(), "Unknown"),
+                Boolean.TRUE.equals(row.getOverdue())
+        );
+    }
+
+    private String firstPresent(String preferred, String fallback) {
+        return preferred != null && !preferred.isBlank() ? preferred : fallback;
     }
 
     // ---- Audit and notification helpers ---------------------------------

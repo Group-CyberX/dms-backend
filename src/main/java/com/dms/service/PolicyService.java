@@ -64,32 +64,25 @@ public class PolicyService {
     /** Every metadata field in use, with how widely it is applied. */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> metadataKeys() {
-        Map<String, Set<UUID>> documentsByKey = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        Map<String, Set<String>> valuesByKey = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-
-        for (DocumentMetadata entry : metadataRepository.findAll()) {
-            if (entry.getKey() == null || entry.getDocument() == null) {
-                continue;
-            }
-            documentsByKey.computeIfAbsent(entry.getKey(), k -> new HashSet<>())
-                    .add(entry.getDocument().getDocument_id());
-            if (entry.getValue() != null) {
-                valuesByKey.computeIfAbsent(entry.getKey(), k -> new HashSet<>()).add(entry.getValue());
+        // Counts come back aggregated; only the handful of sample values shown
+        // against each key is assembled here.
+        Map<String, List<String>> samplesByKey = new HashMap<>();
+        for (DocumentMetadataRepository.MetadataKeyValue pair : metadataRepository.findDistinctKeyValues()) {
+            List<String> samples = samplesByKey.computeIfAbsent(pair.getKey(), k -> new ArrayList<>());
+            if (samples.size() < 3) {
+                samples.add(pair.getValue());
             }
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
-        documentsByKey.forEach((key, documents) -> {
+        for (DocumentMetadataRepository.MetadataKeyUsage usage : metadataRepository.findKeyUsage()) {
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("key", key);
-            row.put("documentCount", documents.size());
-            row.put("distinctValues", valuesByKey.getOrDefault(key, Set.of()).size());
-            List<String> samples = new ArrayList<>(valuesByKey.getOrDefault(key, Set.of()));
-            Collections.sort(samples);
-            row.put("sampleValues", samples.size() > 3 ? samples.subList(0, 3) : samples);
+            row.put("key", usage.getKey());
+            row.put("documentCount", usage.getDocumentCount());
+            row.put("distinctValues", usage.getDistinctValues());
+            row.put("sampleValues", samplesByKey.getOrDefault(usage.getKey(), List.of()));
             result.add(row);
-        });
-        result.sort((a, b) -> ((Integer) b.get("documentCount")) - ((Integer) a.get("documentCount")));
+        }
         return result;
     }
 
@@ -101,8 +94,8 @@ public class PolicyService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> tagUsage() {
         Map<UUID, Long> countByTag = new HashMap<>();
-        for (DocumentTag link : documentTagRepository.findAll()) {
-            countByTag.merge(link.getTagId(), 1L, Long::sum);
+        for (DocumentTagRepository.TagUsage usage : documentTagRepository.findTagUsage()) {
+            countByTag.put(usage.getTagId(), usage.getDocumentCount());
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -120,9 +113,7 @@ public class PolicyService {
     /** Removes a tag from the vocabulary and from every document carrying it. */
     @Transactional
     public void deleteTag(UUID tagId, String actorIp) {
-        documentTagRepository.findAll().stream()
-                .filter(link -> tagId.equals(link.getTagId()))
-                .forEach(documentTagRepository::delete);
+        documentTagRepository.deleteByTagId(tagId);
         tagRepository.deleteById(tagId);
         auditLogService.createAuditLog("TAG_DELETED", tagId, actorIp, "SUCCESS");
     }
@@ -260,16 +251,11 @@ public class PolicyService {
 
         Set<UUID> inScope = null;
         if (policy.getScope() == RetentionPolicy.Scope.TAG) {
-            inScope = new HashSet<>();
             Optional<Tag> tag = tagRepository.findByTagNameIgnoreCase(policy.getMatchValue());
             if (tag.isEmpty()) {
                 return List.of();
             }
-            for (DocumentTag link : documentTagRepository.findAll()) {
-                if (tag.get().getTag_id().equals(link.getTagId())) {
-                    inScope.add(link.getDocumentId());
-                }
-            }
+            inScope = new HashSet<>(documentTagRepository.findDocumentIdsByTagId(tag.get().getTag_id()));
         }
 
         List<Documents> due = new ArrayList<>();
@@ -331,12 +317,9 @@ public class PolicyService {
 
         // OCR text per document, so a rule can match on content as well as title.
         Map<UUID, StringBuilder> textByDocument = new HashMap<>();
-        for (DocumentVersions version : versionRepository.findAll()) {
-            String text = version.getOcr_content();
-            if (text != null && !text.isBlank()) {
-                textByDocument.computeIfAbsent(version.getDocument_id(), id -> new StringBuilder())
-                        .append('\n').append(text);
-            }
+        for (DocumentVersionRepository.OcrText version : versionRepository.findOcrText()) {
+            textByDocument.computeIfAbsent(version.getDocumentId(), id -> new StringBuilder())
+                    .append('\n').append(version.getOcrContent());
         }
 
         int applied = 0;

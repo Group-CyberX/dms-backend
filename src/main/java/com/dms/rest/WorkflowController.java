@@ -1,5 +1,6 @@
 package com.dms.rest;
 
+import com.dms.dao.WorkflowInstanceRepository;
 import com.dms.dto.CreateWorkflowRequest;
 import com.dms.models.WorkflowInstance;
 import com.dms.service.WorkflowService;
@@ -29,6 +30,21 @@ public class WorkflowController {
     }
 
     // Get all workflows (used for listing / My Tasks page)
+    /**
+     * One short row per document giving its most recent workflow status, for
+     * the badges on the document list and document page.
+     */
+    @GetMapping("/status-by-document")
+    public List<WorkflowInstanceRepository.DocumentWorkflowStatus> getStatusByDocument() {
+        return workflowService.getLatestStatusPerDocument();
+    }
+
+    /** Workflow count per template, for the policies screen's usage column. */
+    @GetMapping("/usage-by-template")
+    public List<WorkflowInstanceRepository.TemplateUsage> getUsageByTemplate() {
+        return workflowService.getUsageByTemplate();
+    }
+
     @GetMapping
     public List<WorkflowInstance> getAllWorkflows() {
         return workflowService.getAllWorkflows();

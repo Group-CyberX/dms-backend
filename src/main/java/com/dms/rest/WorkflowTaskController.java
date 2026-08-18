@@ -1,5 +1,6 @@
 package com.dms.rest;
 
+import com.dms.dto.MyTaskRowResponse;
 import com.dms.dto.TaskContextResponse;
 import com.dms.dto.TaskSigningContextResponse;
 import com.dms.dto.WorkflowTaskActionRequest;
@@ -21,6 +22,16 @@ public class WorkflowTaskController {
     }
 
     // Get all tasks for a specific workflow instance
+    /**
+     * The signed-in user's tasks, already joined to their workflow, document and
+     * approval step, ordered by due date. One request in place of the
+     * per-workflow fan-out the My Tasks screen used to perform.
+     */
+    @GetMapping("/my")
+    public List<MyTaskRowResponse> getMyTasks() {
+        return workflowTaskService.getMyTasks();
+    }
+
     @GetMapping("/instance/{instanceId}")
     public List<WorkflowTask> getTasksByInstance(@PathVariable Long instanceId) {
         return workflowTaskService.getTasksByInstanceId(instanceId);

@@ -29,4 +29,43 @@ public interface DocumentMetadataRepository extends JpaRepository<DocumentMetada
     @Transactional
     @Query("DELETE FROM DocumentMetadata m WHERE m.document.document_id = :documentId AND m.key = :key")
     void deleteByDocument_document_idAndKey(@Param("documentId") UUID documentId, @Param("key") String key);
+
+    /**
+     * How widely each metadata key is used, aggregated by the database.
+     *
+     * The policies screen previously loaded every metadata row in the system
+     * and built these counts in Java, which also walked each row's document
+     * association one at a time.
+     */
+    @Query("""
+            SELECT m.key AS key,
+                   COUNT(DISTINCT m.document.document_id) AS documentCount,
+                   COUNT(DISTINCT m.value) AS distinctValues
+            FROM DocumentMetadata m
+            WHERE m.key IS NOT NULL
+            GROUP BY m.key
+            ORDER BY COUNT(DISTINCT m.document.document_id) DESC
+            """)
+    List<MetadataKeyUsage> findKeyUsage();
+
+    /** A few example values per key, for the samples column. */
+    @Query("""
+            SELECT m.key AS key, m.value AS value
+            FROM DocumentMetadata m
+            WHERE m.key IS NOT NULL AND m.value IS NOT NULL
+            GROUP BY m.key, m.value
+            ORDER BY m.key, m.value
+            """)
+    List<MetadataKeyValue> findDistinctKeyValues();
+
+    interface MetadataKeyUsage {
+        String getKey();
+        long getDocumentCount();
+        long getDistinctValues();
+    }
+
+    interface MetadataKeyValue {
+        String getKey();
+        String getValue();
+    }
 }
