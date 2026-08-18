@@ -17,6 +17,12 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     //Find notifications which are unread
     List<Notification> findByUserIdAndIsReadFalseOrderByCreatedAtDesc(UUID userId);
 
+    /**
+     * Unread count for the dashboard badge. The dashboard used to fetch every
+     * unread row and call .size() on the list.
+     */
+    long countByUserIdAndIsReadFalse(UUID userId);
+
     @Modifying
     @Transactional
     @Query("UPDATE Notification n SET n.isRead = true WHERE n.userId = :userId AND n.isRead = false AND n.isDeleted = false")

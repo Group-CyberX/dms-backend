@@ -209,6 +209,20 @@ public class WorkflowService {
     }
 
     // Fetch all workflow instances (for listing / My Tasks page)
+    /**
+     * Latest workflow status per document, for the status badges on the
+     * document list and document page. Both used to call getAllWorkflows() and
+     * reduce the whole table down to this in the browser.
+     */
+    public List<WorkflowInstanceRepository.DocumentWorkflowStatus> getLatestStatusPerDocument() {
+        return instanceRepo.findLatestStatusPerDocument();
+    }
+
+    /** Workflow count per template, for the policies screen's usage column. */
+    public List<WorkflowInstanceRepository.TemplateUsage> getUsageByTemplate() {
+        return instanceRepo.findTemplateUsage();
+    }
+
     public List<WorkflowInstance> getAllWorkflows() {
         return instanceRepo.findAll();
     }

@@ -3,6 +3,7 @@ package com.dms.exceptions;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,6 +44,18 @@ public class GlobalExceptionHandler {
         response.put("message", ex.getMessage());
 
         return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+    }
+
+    // deactivated or suspended account -> 403, with a message the sign-in
+    // screen can show as-is. Distinct from 401 so the client does not treat it
+    // as a wrong password and offer a retry.
+    @ExceptionHandler(DisabledException.class)
+    public ResponseEntity<?> handleDisabledAccount(DisabledException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", ex.getMessage());
+
+        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
     }
 
     // someone else is editing the document -> 409, with who is holding it

@@ -129,14 +129,12 @@ public class ErpDocumentLinkService {
     public int linkPendingDocuments() {
         int created = 0;
         try {
+            // Only the versions that carry extracted text, and only the two
+            // columns needed - not every column of every version.
             Map<UUID, StringBuilder> textByDocument = new HashMap<>();
-            for (DocumentVersions version : documentVersionRepository.findAll()) {
-                String text = version.getOcr_content();
-                if (text == null || text.isBlank()) {
-                    continue;
-                }
-                textByDocument.computeIfAbsent(version.getDocument_id(), id -> new StringBuilder())
-                        .append('\n').append(text);
+            for (DocumentVersionRepository.OcrText version : documentVersionRepository.findOcrText()) {
+                textByDocument.computeIfAbsent(version.getDocumentId(), id -> new StringBuilder())
+                        .append('\n').append(version.getOcrContent());
             }
 
             for (Documents document : documentRepository.findAllActive()) {

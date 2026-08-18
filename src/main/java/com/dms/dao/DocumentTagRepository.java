@@ -28,4 +28,27 @@ public interface DocumentTagRepository extends JpaRepository<DocumentTag, UUID> 
     @Transactional
     @Query("DELETE FROM DocumentTag dt WHERE dt.documentId = :documentId")
     void deleteByDocumentId(@Param("documentId") UUID documentId);
+
+    /** Documents carrying a given tag, without scanning the whole join table. */
+    @Query("SELECT dt.documentId FROM DocumentTag dt WHERE dt.tagId = :tagId")
+    List<UUID> findDocumentIdsByTagId(@Param("tagId") UUID tagId);
+
+    /** Removes a tag from every document carrying it, in one statement. */
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM DocumentTag dt WHERE dt.tagId = :tagId")
+    void deleteByTagId(@Param("tagId") UUID tagId);
+
+    /**
+     * Documents per tag, counted by the database. The tag vocabulary screen
+     * used to load every document-tag row and total them in a HashMap.
+     */
+    @Query("SELECT dt.tagId AS tagId, COUNT(dt.documentId) AS documentCount " +
+           "FROM DocumentTag dt GROUP BY dt.tagId")
+    List<TagUsage> findTagUsage();
+
+    interface TagUsage {
+        UUID getTagId();
+        long getDocumentCount();
+    }
 }
