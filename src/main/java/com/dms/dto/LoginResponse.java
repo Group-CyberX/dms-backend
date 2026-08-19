@@ -11,6 +11,14 @@ public class LoginResponse {
     private final String role;
     private final Map<String, Boolean> permissions;
 
+    /**
+     * True when the password was accepted but a code has been emailed and the
+     * session has not been issued yet. Every token field is null in that case,
+     * so a client that ignores this flag cannot accidentally treat it as a
+     * completed sign-in.
+     */
+    private final boolean twoFactorRequired;
+
     public LoginResponse(String email,
                          String username,
                          String accessToken,
@@ -24,6 +32,22 @@ public class LoginResponse {
         this.refreshToken = refreshToken;
         this.role = role;
         this.permissions = permissions;
+        this.twoFactorRequired = false;
+    }
+
+    private LoginResponse(String email, boolean twoFactorRequired) {
+        this.email = email;
+        this.username = null;
+        this.accessToken = null;
+        this.refreshToken = null;
+        this.role = null;
+        this.permissions = null;
+        this.twoFactorRequired = twoFactorRequired;
+    }
+
+    /** Password accepted, code sent - no session until the code is confirmed. */
+    public static LoginResponse pendingTwoFactor(String email) {
+        return new LoginResponse(email, true);
     }
 
     public String getEmail() {
@@ -48,5 +72,9 @@ public class LoginResponse {
 
     public Map<String, Boolean> getPermissions() {
         return permissions;
+    }
+
+    public boolean isTwoFactorRequired() {
+        return twoFactorRequired;
     }
 }

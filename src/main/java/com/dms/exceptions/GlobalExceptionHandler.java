@@ -36,6 +36,52 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 
+    // email already taken -> 400, in the same shape as a validation failure so
+    // the registration form can show it under the email input rather than as a
+    // detached banner.
+    @ExceptionHandler(EmailAlreadyRegisteredException.class)
+    public ResponseEntity<?> handleEmailAlreadyRegistered(EmailAlreadyRegisteredException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", ex.getMessage());
+        response.put("errors", Map.of("email", ex.getMessage()));
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    // name already taken -> 400, keyed to the fields the name is built from.
+    @ExceptionHandler(UsernameTakenException.class)
+    public ResponseEntity<?> handleUsernameTaken(UsernameTakenException ex) {
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", ex.getMessage());
+        response.put("errors", Map.of(
+                "firstName", ex.getMessage(),
+                "lastName", ex.getMessage()));
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * A unique or foreign key the caller broke that nothing above caught.
+     *
+     * The catch-all below would answer this with a 500 whose body is the raw
+     * SQL and constraint name - both useless to the person reading it and more
+     * than they should be told about the schema. This keeps it a 400 with a
+     * plain sentence, and leaves the detail in the log.
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<?> handleDataIntegrityViolation(
+            org.springframework.dao.DataIntegrityViolationException ex) {
+
+        ex.printStackTrace();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "That conflicts with something already saved. Check the details and try again.");
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
     // failed authentication -> 401, not 500
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<?> handleBadCredentials(BadCredentialsException ex) {

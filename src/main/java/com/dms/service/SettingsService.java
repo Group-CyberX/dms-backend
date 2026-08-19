@@ -30,13 +30,15 @@ public class SettingsService {
             "emailNotifications", "pushNotifications", "documentApproval",
             "workflowUpdates", "systemAlerts",
             "language", "timezone", "dateFormat",
-            "theme");
+            "theme",
+            "twoFactorEnabled");
 
     /** Organisation-wide configuration, editable by administrators. */
     private static final Set<String> ORG_KEYS = Set.of(
             "defaultRetentionDays", "recycleBinRetentionDays",
             "automaticVersionControl", "maxVersionsPerDocument", "mandatoryClassification",
-            "sessionTimeout", "passwordPolicy", "passwordExpiry", "allowedFileTypes");
+            "sessionTimeout", "passwordPolicy", "passwordExpiry", "allowedFileTypes",
+            "twoFactorAuth");
 
     /** Applied when a user has never saved anything. */
     private static final Map<String, Object> USER_DEFAULTS = Map.ofEntries(
@@ -48,7 +50,8 @@ public class SettingsService {
             Map.entry("language", "English"),
             Map.entry("timezone", "UTC+5:30 (Sri Lanka)"),
             Map.entry("dateFormat", "DD/MM/YYYY"),
-            Map.entry("theme", "Light"));
+            Map.entry("theme", "Light"),
+            Map.entry("twoFactorEnabled", false));
 
     private static final Map<String, Object> ORG_DEFAULTS = Map.ofEntries(
             Map.entry("defaultRetentionDays", "2555 Days"),
@@ -59,7 +62,9 @@ public class SettingsService {
             Map.entry("sessionTimeout", "30 Minutes"),
             Map.entry("passwordPolicy", "Strong (8+ chars, mixed, numbers, symbols)"),
             Map.entry("passwordExpiry", "90 Days"),
-            Map.entry("allowedFileTypes", "PDF, DOC, DOCX, XLS, XLSX, JPG, PNG"));
+            // DOC and XLS were advertised here but never accepted by the uploader.
+            Map.entry("allowedFileTypes", "PDF, DOCX, XLSX, PNG, JPG, JPEG"),
+            Map.entry("twoFactorAuth", false));
 
     private final SettingEntryRepository repository;
     private final AuditLogService auditLogService;
@@ -124,6 +129,37 @@ public class SettingsService {
 
         auditLogService.createAuditLog("ORG_SETTINGS_UPDATED", actorId, actorIp, "SUCCESS");
         return current;
+    }
+
+    /**
+     * Whether every sign-in has to be confirmed with an emailed code.
+     *
+     * Read on the sign-in path, so it is deliberately the one setting exposed
+     * on its own rather than through organisationSettings() - that builds the
+     * whole settings document, and a login should not pay for the parts it
+     * does not read.
+     */
+    /**
+     * Whether this person has asked for a code on their own sign-ins.
+     *
+     * Read only when the organisation-wide switch is off, so an install that
+     * requires codes for everyone does not pay for a second lookup.
+     */
+    @Transactional(readOnly = true)
+    public boolean twoFactorEnabledFor(UUID userId) {
+        if (userId == null) {
+            return false;
+        }
+        return repository.findByScopeAndOwnerId(SettingEntry.SCOPE_USER, userId)
+                .map(entry -> Boolean.TRUE.equals(read(entry.getPayload()).get("twoFactorEnabled")))
+                .orElse(false);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean twoFactorRequired() {
+        return repository.findFirstByScope(SettingEntry.SCOPE_ORG)
+                .map(entry -> Boolean.TRUE.equals(read(entry.getPayload()).get("twoFactorAuth")))
+                .orElse(false);
     }
 
     // ------------------------------------------------------------------

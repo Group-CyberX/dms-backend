@@ -13,7 +13,12 @@ import java.util.UUID;
 // filter backs the per-user view.
 @Table(name = "\"Document\"", indexes = {
         @Index(name = "idx_document_deleted_folder", columnList = "is_deleted, folder_id"),
-        @Index(name = "idx_document_owner", columnList = "owner_id")
+        @Index(name = "idx_document_owner", columnList = "owner_id"),
+        // The list is always sorted newest-first; without this the database
+        // sorted every matching row before taking a page of ten.
+        @Index(name = "idx_document_deleted_created", columnList = "is_deleted, created_at"),
+        // Serves the "new uploads" filter administrators work from.
+        @Index(name = "idx_document_deleted_status", columnList = "is_deleted, status")
 })
 public class Documents {
     @Id
@@ -46,6 +51,20 @@ public class Documents {
 
     @Column(name = "is_deleted")
     private boolean is_deleted;
+
+    /**
+     * Where the document has reached in its life: NEW until a workflow is
+     * started on it, then whatever that workflow reports.
+     *
+     * Stored on the row rather than derived from workflow_instance on every
+     * read. workflow_instance.document_id is a varchar while this table's key
+     * is a uuid, so any join between them needs a cast, and a cast on a join
+     * column cannot use an index - on the documents list that is the whole
+     * table scanned per page. Kept in step by DocumentUploadService when a
+     * document is created and by WorkflowService when a workflow starts.
+     */
+    @Column(name = "status")
+    private String status;
 
     // ---- Edit lock -------------------------------------------------------
     // Who currently holds the document for editing, and since when. The lock
@@ -170,6 +189,14 @@ public class Documents {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public UUID getLockedByUserId() {

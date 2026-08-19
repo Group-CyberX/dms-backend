@@ -13,6 +13,8 @@ import com.dms.dto.LoginResponse;
 import com.dms.dao.RefreshTokenRepository;
 import com.dms.models.RefreshToken;
 
+import com.dms.exceptions.EmailAlreadyRegisteredException;
+import com.dms.exceptions.UsernameTakenException;
 import com.dms.util.PermissionUtil;
 import com.dms.security.CustomUserDetails;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -34,6 +36,8 @@ public class AuthService {
     private final EmailService emailService;        // Service for sending emails
     private final AuditLogService auditLogService;  // Records who signed in, and who failed to
     private final NotificationService notificationService;  // Security alerts to the account owner
+    private final OtpService otpService;                    // Six-digit sign-in codes
+    private final SettingsService settingsService;          // Whether sign-in codes are required
 
     public AuthService(UserRepository userRepository,
                        RoleRepository roleRepository,
@@ -42,7 +46,9 @@ public class AuthService {
                        RefreshTokenRepository refreshTokenRepository,
                        EmailService emailService,
                        AuditLogService auditLogService,
-                       NotificationService notificationService) {
+                       NotificationService notificationService,
+                       OtpService otpService,
+                       SettingsService settingsService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -51,11 +57,26 @@ public class AuthService {
         this.emailService = emailService;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
+        this.otpService = otpService;
+        this.settingsService = settingsService;
     }
     // Register
     public RegisterResponse register(RegisterRequest request) {
+        // Both of these are unique in the database. Checking them here means a
+        // clash comes back naming the field that caused it, instead of the
+        // constraint violation surfacing as an error the reader can do nothing
+        // with.
+        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+            throw new EmailAlreadyRegisteredException("An account with this email already exists");
+        }
+
+        String username = request.getFirstName() + " " + request.getLastName();
+        if (userRepository.findByUsername(username).isPresent()) {
+            throw new UsernameTakenException("Someone is already registered under this name");
+        }
+
         User user = new User();
-        user.setUsername(request.getFirstName() + " " + request.getLastName());
+        user.setUsername(username);
         user.setEmail(request.getEmail());
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setStatus("ACTIVE");
@@ -123,25 +144,76 @@ public class AuthService {
         // discover which accounts exist.
         requireActive(user);
 
-        // Generate access token
+        // With sign-in codes switched on, the password alone does not open a
+        // session: a code goes to the address on the account and the session is
+        // issued only once it comes back. Read as a single setting rather than
+        // the whole settings document, so an ordinary sign-in costs one small
+        // query more and nothing else.
+        // A code is needed when the organisation requires one of everybody, or
+        // when this person has switched it on for their own account. The
+        // per-user lookup is skipped whenever the organisation-wide switch has
+        // already decided it.
+        boolean needsCode = settingsService.twoFactorRequired()
+                || settingsService.twoFactorEnabledFor(user.getUserId());
+
+        if (needsCode) {
+            String otp = otpService.generateLoginOtp(user.getEmail());
+            try {
+                emailService.sendOtpEmail(user.getEmail(), otp);
+            } catch (Exception e) {
+                // Without the code nobody could finish signing in, so this must
+                // not look like a wrong password.
+                otpService.clearLoginOtp(user.getEmail());
+                throw new IllegalStateException(
+                        "Could not send your verification code. Try again shortly.");
+            }
+
+            auditLogService.tryRecord("LOGIN_2FA_SENT", user.getUserId(), null, null, "SUCCESS");
+            return LoginResponse.pendingTwoFactor(user.getEmail());
+        }
+
+        return issueSession(user);
+    }
+
+    /**
+     * Confirms a sign-in code and opens the session.
+     *
+     * The password was already checked by login(); this step only proves the
+     * person also reads the account's mailbox. The code is cleared on success
+     * so it cannot be replayed.
+     */
+    public LoginResponse verifyTwoFactor(String email, String otp) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired code"));
+
+        if (!otpService.verifyLoginOtp(email, otp)) {
+            auditLogService.tryRecord("LOGIN_2FA_FAILED", user.getUserId(), null, null, "FAILED");
+            throw new BadCredentialsException("Invalid or expired code");
+        }
+
+        // Re-checked here: an account can be deactivated between the password
+        // and the code.
+        requireActive(user);
+
+        otpService.clearLoginOtp(email);
+        return issueSession(user);
+    }
+
+    /** Issues the tokens for an already-authenticated user. */
+    private LoginResponse issueSession(User user) {
         String accessToken = jwtUtil.generateToken(
                 user.getEmail(),
                 user.getRole().getName()
         );
 
-        // Update last login
         user.setLastLogin(LocalDateTime.now());
         userRepository.save(user);
 
         auditLogService.tryRecord("LOGIN_SUCCESS", user.getUserId(), null, null, "SUCCESS");
 
-        // Generate refresh token
         String refreshToken = createRefreshToken(user);
-
-        // Role
         String roleName = user.getRole().getName();
 
-        // Permissions (JSON → Map)
         Map<String, Boolean> permissions =
                 PermissionUtil.parsePermissions(
                         user.getRole().getPermissions() != null
@@ -149,7 +221,6 @@ public class AuthService {
                                 : "{}"
                 );
 
-        //Return full response
         return new LoginResponse(
                 user.getEmail(),
                 user.getUsername(),

@@ -62,15 +62,21 @@ public class DocumentVersionService {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "image/png",
-            "image/jpeg"
+            "image/jpeg",
+            "text/plain"
     );
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            "pdf", "docx", "xlsx", "png", "jpg", "jpeg"
+            "pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"
     );
 
+    /**
+     * Name shape only, matching the first-upload path. Which extensions are
+     * permitted is the Allowed File Types setting's decision, so a rejected
+     * type reads as an unsupported type rather than a malformed name.
+     */
     private static final Pattern SAFE_FILENAME = Pattern.compile(
-            "^[A-Za-z0-9_-]+\\.(pdf|docx|xlsx|png|jpg|jpeg)$",
+            "^[A-Za-z0-9_-]+\\.[A-Za-z0-9]+$",
             Pattern.CASE_INSENSITIVE
     );
 
