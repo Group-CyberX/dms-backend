@@ -84,16 +84,25 @@ public class FolderTreeService {
                 ? documentRepository.sumFileSizeByFolderGrouped()
                 : documentRepository.sumFileSizeByFolderGroupedForOwner(ownerId);
 
+        // Totals for the whole scope are accumulated alongside the per-folder
+        // figures. A document filed in no folder, or in one that has since been
+        // deleted, belongs to no node in the tree, so rolling the nodes up
+        // misses it - the root reported 81 beside a list of 92.
+        long scopeDocuments = 0L;
+        long scopeBytes = 0L;
+
         Map<UUID, Long> countMap = new HashMap<>();
         for (Object[] row : countRows) {
             UUID folderId = (UUID) row[0];
             Long count = (Long) row[1];
+            scopeDocuments += count == null ? 0L : count;
             if (folderId != null) countMap.put(folderId, count);
         }
         Map<UUID, Long> sizeMap = new HashMap<>();
         for (Object[] row : sizeRows) {
             UUID folderId = (UUID) row[0];
             Long size = (Long) row[1];
+            scopeBytes += size == null ? 0L : size;
             if (folderId != null) sizeMap.put(folderId, size);
         }
 
@@ -116,6 +125,11 @@ public class FolderTreeService {
         // parent whose documents all live in subfolders report 0, which read as
         // an empty folder even though the files were right there one level down.
         rollUpTotals(syntheticRoot, new HashSet<>());
+
+        // The root reports the scope's real total, which the roll-up cannot
+        // reach. Every folder below it keeps its own rolled-up figure.
+        syntheticRoot.setDocumentCount(scopeDocuments);
+        syntheticRoot.setTotalSize(scopeBytes);
         return syntheticRoot;
     }
 
