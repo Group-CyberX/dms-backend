@@ -26,13 +26,16 @@ public class FolderController {
     private final FolderRepository folderRepository;
     private final FolderTreeService folderTreeService;
     private final AuditLogService auditLogService;
+    private final com.dms.service.PermissionService permissionService;
 
     public FolderController(FolderRepository folderRepository,
                             FolderTreeService folderTreeService,
-                            AuditLogService auditLogService) {
+                            AuditLogService auditLogService,
+                            com.dms.service.PermissionService permissionService) {
         this.folderRepository = folderRepository;
         this.folderTreeService = folderTreeService;
         this.auditLogService = auditLogService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping
@@ -56,9 +59,19 @@ public class FolderController {
         return folderTreeService.getFullTree(ownerId);
     }
 
-    /** Recycle bin listing: one row per deleted folder subtree. */
+    /**
+     * Recycle bin listing: one row per deleted folder subtree.
+     *
+     * Folders have no owner, so there is no per-user view of them: they are
+     * shown to the roles that may see everyone's deleted documents and to
+     * nobody else. An end user was previously shown every deleted folder in the
+     * organisation beside a document list scoped to their own.
+     */
     @GetMapping("/trash")
-    public List<FolderTrashItemDTO> getTrash() {
+    public List<FolderTrashItemDTO> getTrash(org.springframework.security.core.Authentication auth) {
+        if (!permissionService.hasPermission(auth, "canViewAllDeletedDocuments")) {
+            return List.of();
+        }
         return folderTreeService.getFolderTrash();
     }
 
@@ -104,9 +117,14 @@ public class FolderController {
      * Moves a folder along with all of its subfolders to the recycle bin,
      * moving every document inside any of them to the recycle bin too
      * (soft delete). Nothing is permanently removed.
+     *
+     * Gated on its own permission rather than on canDeleteDocument. Folders
+     * have no owner, so this takes every document inside with it whoever owns
+     * them - being allowed to delete your own document should not authorise
+     * clearing a shared folder for the whole organisation.
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteDocument')")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteFolder')")
     public ResponseEntity<?> delete(@PathVariable("id") UUID id, HttpServletRequest httpReq) {
         if (!folderRepository.existsById(id)) {
             return ResponseEntity.notFound().build();

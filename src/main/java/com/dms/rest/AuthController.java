@@ -2,7 +2,7 @@ package com.dms.rest;
 
 import com.dms.dto.*;
 import com.dms.service.AuthService;
-import org.springframework.http.HttpStatus;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,23 +19,32 @@ public class AuthController {
         this.authService = authService;
     }
 
-    // Register a new user account
+    // Register a new user account.
+    //
+    // Failures are left to GlobalExceptionHandler: it turns a constraint breach
+    // into a 400 naming the offending fields, which the form shows against the
+    // inputs. Catching everything here instead returned one flat string built
+    // from the underlying exception, so a duplicate email surfaced to the user
+    // as a database constraint name.
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request){
-        try {
-            RegisterResponse response = authService.register(request);
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Registration failed: " + e.getMessage());
-        }
+    public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request){
+        return ResponseEntity.ok(authService.register(request));
     }
 
-    // Authenticate user and generate JWT tokens
+    // Authenticate user and generate JWT tokens.
+    //
+    // When sign-in codes are switched on this returns twoFactorRequired with no
+    // tokens; the session is issued by /auth/verify-2fa once the emailed code
+    // comes back.
     @PostMapping("/login")
-    public LoginResponse login(@RequestBody LoginRequest request){
+    public LoginResponse login(@Valid @RequestBody LoginRequest request){
     return authService.login(request);
+    }
+
+    // Second step of a sign-in that needed a code.
+    @PostMapping("/verify-2fa")
+    public LoginResponse verifyTwoFactor(@Valid @RequestBody VerifyTwoFactorRequest request){
+        return authService.verifyTwoFactor(request.getEmail(), request.getOtp());
     }
 
     // Initiate password reset process by sending reset toke

@@ -17,6 +17,10 @@ public final class WorkflowConstants {
     public static final String TASK_REJECTED = "REJECTED";
 
     // document statuses
+    // NEW is where every upload starts: stored, but no workflow begun on it yet.
+    // It is what an administrator filters the document list by to find the
+    // uploads still waiting to be routed to someone.
+    public static final String DOCUMENT_NEW = "NEW";
     public static final String DOCUMENT_PENDING_APPROVAL = "PENDING_APPROVAL";
     public static final String DOCUMENT_APPROVED = "APPROVED";
     public static final String DOCUMENT_REJECTED = "REJECTED";

@@ -24,11 +24,28 @@ public class SearchController {
     private final SearchService searchService;
     private final SearchLogRepository searchLogRepository;
     private final com.dms.dao.UserRepository userRepository;
+    private final com.dms.service.PermissionService permissionService;
 
-    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository, com.dms.dao.UserRepository userRepository) {
+    public SearchController(SearchService searchService, SearchLogRepository searchLogRepository,
+                            com.dms.dao.UserRepository userRepository,
+                            com.dms.service.PermissionService permissionService) {
         this.searchService = searchService;
         this.searchLogRepository = searchLogRepository;
         this.userRepository = userRepository;
+        this.permissionService = permissionService;
+    }
+
+    /**
+     * Whose documents a search may reach.
+     *
+     * Everyone's only for a role holding canSearchAllDocuments; otherwise the
+     * caller's own. Without this an end user searching a common word got back
+     * the whole library, including documents they have no way to open.
+     */
+    private UUID searchScopeOwnerId(org.springframework.security.core.Authentication auth) {
+        return permissionService.hasPermission(auth, "canSearchAllDocuments")
+                ? null
+                : SecurityUtils.currentUserId();
     }
 
     /**
@@ -36,11 +53,12 @@ public class SearchController {
      * Usage: GET /api/search?query=searchTerm
      */
     @GetMapping
-    public ResponseEntity<List<SearchResponseDTO>> search(@RequestParam String query) {
+    public ResponseEntity<List<SearchResponseDTO>> search(@RequestParam String query,
+                                                          org.springframework.security.core.Authentication auth) {
         if (query == null || query.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        List<SearchResponseDTO> results = searchService.universalSearch(query);
+        List<SearchResponseDTO> results = searchService.universalSearch(query, searchScopeOwnerId(auth));
         return ResponseEntity.ok(results);
     }
 
@@ -49,11 +67,12 @@ public class SearchController {
      * Usage: GET /api/search/tags?tag=tagName
      */
     @GetMapping("/tags")
-    public ResponseEntity<List<SearchResponseDTO>> searchByTag(@RequestParam String tag) {
+    public ResponseEntity<List<SearchResponseDTO>> searchByTag(@RequestParam String tag,
+                                                               org.springframework.security.core.Authentication auth) {
         if (tag == null || tag.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        List<SearchResponseDTO> results = searchService.searchByTag(tag);
+        List<SearchResponseDTO> results = searchService.searchByTag(tag, searchScopeOwnerId(auth));
         return ResponseEntity.ok(results);
     }
 
@@ -69,8 +88,10 @@ public class SearchController {
     public ResponseEntity<Page<SearchResponseDTO>> advancedSearch(
             @RequestBody AdvancedSearchRequestDTO filters,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(searchService.advancedSearch(filters, page, Math.min(Math.max(size, 1), 100)));
+            @RequestParam(defaultValue = "10") int size,
+            org.springframework.security.core.Authentication auth) {
+        return ResponseEntity.ok(searchService.advancedSearch(
+                filters, page, Math.min(Math.max(size, 1), 100), searchScopeOwnerId(auth)));
     }
 
     /**

@@ -46,19 +46,22 @@ public class DocumentController {
     private final NotificationService notificationService;
     private final UserRepository userRepository;
     private final DocumentLockService documentLockService;
+    private final com.dms.service.PermissionService permissionService;
 
     public DocumentController(DocumentRepository documentRepository,
                               DocumentUploadService documentUploadService,
                               AuditLogService auditLogService,
                               NotificationService notificationService,
                               UserRepository userRepository,
-                              DocumentLockService documentLockService) {
+                              DocumentLockService documentLockService,
+                              com.dms.service.PermissionService permissionService) {
         this.documentRepository = documentRepository;
         this.documentUploadService = documentUploadService;
         this.auditLogService = auditLogService;
         this.notificationService = notificationService;
         this.userRepository = userRepository;
         this.documentLockService = documentLockService;
+        this.permissionService = permissionService;
     }
 
     // ------------------------------------------------------------------
@@ -128,6 +131,7 @@ public class DocumentController {
     public Page<DocumentResponse> listPage(@RequestParam(defaultValue = "false") boolean all,
                                            @RequestParam(required = false) UUID folderId,
                                            @RequestParam(required = false) String search,
+                                           @RequestParam(required = false) String status,
                                            @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "10") int size,
                                            Authentication auth) {
@@ -135,18 +139,54 @@ public class DocumentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        UUID ownerId = all ? null : com.dms.security.SecurityUtils.currentUserId();
+        UUID ownerId = listScopeOwnerId(auth, all);
         String term = (search == null || search.isBlank()) ? null : search.trim();
+        String statusFilter = (status == null || status.isBlank()) ? null : status.trim().toUpperCase();
 
         Pageable pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "created_at"));
 
-        Page<Documents> documents = documentRepository.findPage(ownerId, folderId, term, pageable);
+        // One query: the page and each row's owner name together, rather than
+        // fetching the page and then going back for the names.
+        Page<DocumentRepository.DocumentWithOwner> rows = documentRepository.findPageWithOwner(
+                ownerId, folderId, statusFilter, term, pageable);
 
-        Map<UUID, String> ownerNames = ownerNames(documents.getContent());
-        return documents.map(doc -> convertToDTO(doc, ownerNames));
+        return rows.map(row -> convertToDTO(row.getDocument(), row.getOwnerName()));
+    }
+
+    /**
+     * Whose documents the caller may list.
+     *
+     * Asking for everyone is only honoured for a role holding
+     * canViewAllDocuments; without it the request is scoped back to the caller,
+     * so passing all=true by hand gains nothing. This is what lets an
+     * administrator see what end users have uploaded - until now the list was
+     * always scoped to the caller and an upload reached nobody.
+     */
+    private UUID listScopeOwnerId(Authentication auth, boolean all) {
+        boolean maySeeEveryones = permissionService.hasPermission(auth, "canViewAllDocuments");
+        return (all && maySeeEveryones) ? null : com.dms.security.SecurityUtils.currentUserId();
+    }
+
+    /**
+     * How many documents are waiting for a workflow to be started on them.
+     * Counted in SQL, so the badge covers the whole set rather than the page
+     * currently on screen.
+     */
+    @GetMapping("/new-count")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewDocument')")
+    public Map<String, Long> newUploadCount(@RequestParam(defaultValue = "false") boolean all,
+                                            Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        long count = documentRepository.countByStatus(
+                listScopeOwnerId(auth, all), com.dms.constants.WorkflowConstants.DOCUMENT_NEW);
+
+        return Map.of("count", count);
     }
 
     /** Owner names for a page of documents, in one query. */
@@ -165,6 +205,19 @@ public class DocumentController {
         return names;
     }
 
+    /** Builds the DTO from an owner name the query already resolved. */
+    private DocumentResponse convertToDTO(Documents doc, String resolvedOwnerName) {
+        UUID ownerId = doc.getOwner_id();
+        String ownerName = "Unknown";
+        if (ownerId != null) {
+            ownerName = ownerId.toString().equals("00000000-0000-0000-0000-000000000000")
+                    ? "System"
+                    : (resolvedOwnerName == null ? "Unknown" : resolvedOwnerName);
+        }
+
+        return buildDto(doc, ownerName);
+    }
+
     private DocumentResponse convertToDTO(Documents doc, Map<UUID, String> ownerNames) {
         UUID ownerId = doc.getOwner_id();
         String ownerName = "Unknown";
@@ -174,10 +227,16 @@ public class DocumentController {
                     : ownerNames.getOrDefault(ownerId, "Unknown");
         }
 
-        return new DocumentResponse(
+        return buildDto(doc, ownerName);
+    }
+
+    private DocumentResponse buildDto(Documents doc, String ownerName) {
+        DocumentResponse dto = new DocumentResponse(
                 doc.getDocument_id(), doc.getTitle(), doc.getOwner_id(), ownerName,
                 doc.getFolder_id(), doc.getCurrent_version_id(), doc.getCreated_at(),
                 doc.getDeleted_at(), doc.getFile_size(), doc.isIs_locked(), doc.isIs_deleted());
+        dto.setStatus(doc.getStatus());
+        return dto;
     }
 
     private DocumentResponse convertToDTO(Documents doc) {
@@ -194,7 +253,7 @@ public class DocumentController {
             }
         }
 
-        return new DocumentResponse(
+        DocumentResponse dto = new DocumentResponse(
                 doc.getDocument_id(),
                 doc.getTitle(),
                 doc.getOwner_id(),
@@ -207,6 +266,8 @@ public class DocumentController {
                 doc.isIs_locked(),
                 doc.isIs_deleted()
         );
+        dto.setStatus(doc.getStatus());
+        return dto;
     }
 
     @GetMapping("/{id}")
@@ -230,11 +291,88 @@ public class DocumentController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
         }
 
-        return documentRepository.findAllDeletedByOwner(
-                        com.dms.security.SecurityUtils.currentUserId())
-                .stream()
+        UUID ownerId = trashScopeOwnerId(auth);
+        List<Documents> deleted = ownerId == null
+                ? documentRepository.findAllDeleted()
+                : documentRepository.findAllDeletedByOwner(ownerId);
+
+        return deleted.stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Whose deleted documents the caller may see. Seeing everyone is its own
+     * permission rather than a side effect of being able to edit documents.
+     */
+    /**
+     * Whose documents the caller may change.
+     *
+     * Editing, deleting and restoring were always scoped to the caller. That
+     * was invisible while everyone only saw their own documents, but an
+     * administrator who can now see the whole library got "not found" when
+     * acting on somebody else's - so the scope has to widen with the view.
+     */
+    private UUID manageScopeOwnerId(Authentication auth) {
+        return permissionService.hasPermission(auth, "canManageAllDocuments")
+                ? null
+                : com.dms.security.SecurityUtils.currentUserId();
+    }
+
+    private UUID trashScopeOwnerId(Authentication auth) {
+        return permissionService.hasPermission(auth, "canViewAllDeletedDocuments")
+                ? null
+                : com.dms.security.SecurityUtils.currentUserId();
+    }
+
+    /**
+     * One page of the recycle bin, searched and scoped by the database rather
+     * than by fetching every deleted row and filtering in the browser.
+     */
+    @GetMapping("/trash/page")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewRecycleBin')")
+    public Page<DocumentResponse> trashPage(@RequestParam(required = false) String search,
+                                            @RequestParam(defaultValue = "0") int page,
+                                            @RequestParam(defaultValue = "10") int size,
+                                            Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        String term = (search == null || search.isBlank()) ? null : search.trim();
+        Pageable pageable = PageRequest.of(
+                Math.max(page, 0),
+                Math.min(Math.max(size, 1), 100),
+                Sort.by(Sort.Direction.DESC, "deleted_at"));
+
+        Page<Documents> deleted = documentRepository.findDeletedPage(
+                trashScopeOwnerId(auth), term, pageable);
+
+        Map<UUID, String> ownerNames = ownerNames(deleted.getContent());
+        return deleted.map(doc -> convertToDTO(doc, ownerNames));
+    }
+
+    /**
+     * The recycle bin headline figures, counted across the whole bin so the
+     * cards do not describe only the page on screen.
+     */
+    @GetMapping("/trash/summary")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'canViewRecycleBin')")
+    public Map<String, Long> trashSummary(Authentication auth) {
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not authenticated");
+        }
+
+        // Deleted documents are kept for 30 days, so anything deleted more than
+        // 23 days ago has a week or less left.
+        DocumentRepository.TrashSummary row = documentRepository.summariseDeleted(
+                trashScopeOwnerId(auth), java.time.LocalDateTime.now().minusDays(23));
+
+        Map<String, Long> summary = new HashMap<>();
+        summary.put("count", row == null || row.getCount() == null ? 0L : row.getCount());
+        summary.put("totalBytes", row == null || row.getTotalBytes() == null ? 0L : row.getTotalBytes());
+        summary.put("expiringSoon", row == null || row.getExpiringSoon() == null ? 0L : row.getExpiringSoon());
+        return summary;
     }
 
     // The permission keys below are the same ones the UI uses to show or hide
@@ -313,9 +451,13 @@ public class DocumentController {
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canEditDocument')")
     public ResponseEntity<DocumentResponse> update(@PathVariable("id") UUID id,
                                                    @RequestBody Documents update,
-                                                   HttpServletRequest request) {
+                                                   HttpServletRequest request,
+                                        Authentication auth) {
         UUID userId = com.dms.security.SecurityUtils.currentUserId();
-        Optional<Documents> existingOpt = documentRepository.findActiveByIdAndOwner(id, userId);
+        UUID scope = manageScopeOwnerId(auth);
+        Optional<Documents> existingOpt = scope == null
+                ? documentRepository.findActiveById(id)
+                : documentRepository.findActiveByIdAndOwner(id, scope);
         String ip = getClientIp(request);
 
         if (existingOpt.isEmpty()) {
@@ -343,9 +485,13 @@ public class DocumentController {
     @DeleteMapping("/{id}")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canDeleteDocument')")
     public ResponseEntity<Void> delete(@PathVariable("id") UUID id,
-                                       HttpServletRequest request) {
+                                       HttpServletRequest request,
+                                       Authentication auth) {
         String ip = getClientIp(request);
-        int updated = documentRepository.softDeleteByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+        UUID scope = manageScopeOwnerId(auth);
+        int updated = scope == null
+                ? documentRepository.softDeleteById(id)
+                : documentRepository.softDeleteByIdAndOwner(id, scope);
 
         if (updated == 0) {
             auditLogService.createAuditLog("DOCUMENT_DELETED", id, ip, "FAILED");
@@ -360,9 +506,13 @@ public class DocumentController {
     @PostMapping("/{id}/restore")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'canRestoreRecycleBin')")
     public ResponseEntity<Void> restore(@PathVariable("id") UUID id,
-                                        HttpServletRequest request) {
+                                        HttpServletRequest request,
+                                        Authentication auth) {
         String ip = getClientIp(request);
-        int updated = documentRepository.restoreByIdAndOwner(id, com.dms.security.SecurityUtils.currentUserId());
+        UUID scope = manageScopeOwnerId(auth);
+        int updated = scope == null
+                ? documentRepository.restoreById(id)
+                : documentRepository.restoreByIdAndOwner(id, scope);
 
         if (updated == 0) {
             auditLogService.createAuditLog("DOCUMENT_RESTORED", id, ip, "FAILED");

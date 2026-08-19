@@ -36,7 +36,8 @@ public class DocumentUploadService {
     private final DocumentMetadataRepository documentMetadataRepository;
     private final MetadataExtractorService metadataExtractorService;
     private final TagService tagService;
-    private final ProcessingJobService processingJobService; // Added job service
+    private final ProcessingJobService processingJobService;
+    private final SettingsService settingsService; // Added job service
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -57,15 +58,21 @@ public class DocumentUploadService {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "image/png",
-            "image/jpeg"
+            "image/jpeg",
+            "text/plain"
     );
 
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
-            "pdf", "docx", "xlsx", "png", "jpg", "jpeg"
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
+            "pdf", "docx", "xlsx", "png", "jpg", "jpeg", "txt"
     );
 
+    /**
+     * Name shape only. Which extensions are permitted is decided separately by
+     * allowedExtensions(), so that a rejected type is reported as an
+     * unsupported type rather than as a malformed name.
+     */
     private static final Pattern SAFE_FILENAME = Pattern.compile(
-            "^[A-Za-z0-9_-]+\\.(pdf|docx|xlsx|png|jpg|jpeg)$",
+            "^[A-Za-z0-9_-]+\\.[A-Za-z0-9]+$",
             Pattern.CASE_INSENSITIVE
     );
 
@@ -73,7 +80,34 @@ public class DocumentUploadService {
             "invoice", "contract", "report", "proposal", "other"
     );
 
-    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService) {
+    /**
+     * Extensions currently accepted, from the Allowed File Types setting.
+     * Read at upload time only - no listing or page load consults it. Anything
+     * the setting names that this system cannot process is ignored, and an
+     * unreadable setting falls back to everything supported rather than
+     * blocking uploads.
+     */
+    private java.util.Set<String> allowedExtensions() {
+        try {
+            Object configured = settingsService.organisationSettings().get("allowedFileTypes");
+            if (configured != null && !String.valueOf(configured).isBlank()) {
+                java.util.Set<String> chosen = java.util.Arrays.stream(String.valueOf(configured).split(","))
+                        .map(v -> v.trim().toLowerCase())
+                        .filter(v -> !v.isEmpty())
+                        .filter(SUPPORTED_EXTENSIONS::contains)
+                        .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+                if (!chosen.isEmpty()) {
+                    return chosen;
+                }
+            }
+        } catch (Exception e) {
+            // A settings problem must never stop people uploading.
+        }
+        return SUPPORTED_EXTENSIONS;
+    }
+
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService,
+                                 SettingsService settingsService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.folderRepository = folderRepository;
@@ -82,6 +116,7 @@ public class DocumentUploadService {
         this.documentMetadataRepository = documentMetadataRepository;
         this.metadataExtractorService = metadataExtractorService;
         this.processingJobService = processingJobService;
+        this.settingsService = settingsService;
     }
 
     @Transactional
@@ -128,17 +163,21 @@ public class DocumentUploadService {
         // Validate original filename and extension
         String original = sanitizeOriginalFilename(file.getOriginalFilename());
         if (original == null || !SAFE_FILENAME.matcher(original).matches()) {
-            return new DocumentUploadResponse(null, null, null, fileName, "Invalid file name. Extension must be pdf, docx, xlsx, png, jpg, jpeg.", false);
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "Invalid file name. Use letters, numbers, dashes or underscores, then the extension.", false);
         }
+        java.util.Set<String> allowed = allowedExtensions();
         String ext = getFileExtension(original);
-        if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-            return new DocumentUploadResponse(null, null, null, fileName, "Unsupported file extension: ." + ext, false);
+        if (ext == null || !allowed.contains(ext.toLowerCase())) {
+            return new DocumentUploadResponse(null, null, null, fileName,
+                    "Unsupported file type. Allowed: "
+                            + allowed.stream().sorted().collect(java.util.stream.Collectors.joining(", ")) + ".", false);
         }
 
         String contentType = file.getContentType();
         if (contentType != null && !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             // If reported content type is not in allowlist, still allow if extension is allowed and content type is generic
-            if (!ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
+            if (!SUPPORTED_EXTENSIONS.contains(ext.toLowerCase())) {
                 return new DocumentUploadResponse(null, null, null, fileName, "Unsupported file type: " + contentType, false);
             }
         }
@@ -225,6 +264,10 @@ public class DocumentUploadService {
             document.setFile_size(file.getSize());
             document.setIs_locked(false);
             document.setIs_deleted(false);
+            // Stored, but nothing has been started on it yet. This is what an
+            // administrator filters by to find uploads still waiting to be
+            // routed to someone.
+            document.setStatus(com.dms.constants.WorkflowConstants.DOCUMENT_NEW);
 
             document = documentRepository.save(document);
 

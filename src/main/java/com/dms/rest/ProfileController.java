@@ -14,6 +14,10 @@ import java.util.Map;
 @RequestMapping("/api/profile")
 public class ProfileController {
 
+    /** Local (0771234567) or with the country code (+94771234567). */
+    private static final java.util.regex.Pattern SRI_LANKA_PHONE =
+            java.util.regex.Pattern.compile("^(?:\\+94|0)(?:7\\d{8}|[1-9]\\d{8})$");
+
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final OtpService otpService;
@@ -39,9 +43,19 @@ public class ProfileController {
         String email = authentication.getName();
         String newPhone = payload.get("newPhone");
         
-        if (newPhone == null || newPhone.isEmpty()) {
+        if (newPhone == null || newPhone.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "newPhone is required"));
         }
+
+        // Checked here too: the modal is only the first of the two places that
+        // has to hold, and nothing stopped a caller storing any text at all as
+        // a phone number.
+        if (!SRI_LANKA_PHONE.matcher(newPhone.trim()).matches()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "Enter a Sri Lankan number, e.g. 0771234567 or +94771234567"));
+        }
+
+        newPhone = newPhone.trim();
 
         String otp = otpService.generateOtp(email, newPhone);
         emailService.sendOtpEmail(email, otp);

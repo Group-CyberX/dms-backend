@@ -56,12 +56,13 @@ public class RolePermissionSeeder {
             // Document policies, retention and compliance across the library.
             "DOCUMENT_ADMIN", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument", "canCreateDocument", "canEditDocument",
-                    "canDeleteDocument", "canShareDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments", "canManageAllDocuments", "canCreateDocument", "canEditDocument",
+                    "canDeleteDocument", "canShareDocument", "canAssignDocument",
+                    "canDeleteFolder",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewTask",
                     "canViewWorkflow",
-                    "canViewRecycleBin", "canRestoreRecycleBin", "canPermanentlyDeleteRecycleBin",
+                    "canViewRecycleBin", "canViewAllDeletedDocuments", "canRestoreRecycleBin", "canPermanentlyDeleteRecycleBin",
                     "canViewAuditLog", "canExportAuditLog",
                     "canViewPolicy", "canCreatePolicy", "canEditPolicy", "canDeletePolicy",
                     "canViewSetting", "canEditSetting", "canManageDocumentPolicySetting"),
@@ -71,8 +72,8 @@ public class RolePermissionSeeder {
             // who can alter the system cannot credibly audit it.
             "AUDITOR", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewWorkflow",
                     "canViewAuditLog", "canExportAuditLog",
                     "canViewERPIntegration",
@@ -83,8 +84,9 @@ public class RolePermissionSeeder {
             // in order to choose approvers.
             "BUSINESS_PROCESS_OWNER", List.of(
                     "canViewDashboard", "canViewAnalyticsDashboard",
-                    "canViewDocument", "canCreateDocument", "canEditDocument", "canShareDocument",
-                    "canViewSearch", "canAdvancedSearchSearch",
+                    "canViewDocument", "canViewAllDocuments", "canCreateDocument", "canEditDocument",
+                    "canShareDocument", "canAssignDocument",
+                    "canViewSearch", "canAdvancedSearchSearch", "canSearchAllDocuments",
                     "canViewTask", "canCreateTask", "canEditTask", "canDeleteTask",
                     "canViewWorkflow", "canCreateWorkflow", "canApproveWorkflow",
                     "canEditWorkflow", "canDeleteWorkflow",
@@ -129,31 +131,44 @@ public class RolePermissionSeeder {
             }
 
             try {
-                Map<String, Boolean> desired = new LinkedHashMap<>();
-                Set<String> grantedSet = new HashSet<>(granted);
-                for (String key : PermissionCatalog.keys()) {
-                    desired.put(key, grantedSet.contains(key));
-                }
-
                 Map<String, Boolean> current = readPermissions(role.getPermissions());
-                if (desired.equals(current)) {
-                    continue; // already correct - stay silent
+                Set<String> grantedSet = new HashSet<>(granted);
+
+                // A key the role already carries was decided by whoever last
+                // saved it in Role Management, and is left exactly as they set
+                // it. Only keys it has never seen take the baseline value -
+                // otherwise turning a permission off there lasted until the
+                // next restart, when this class turned it back on.
+                Map<String, Boolean> merged = new LinkedHashMap<>();
+                List<String> newlyGranted = new ArrayList<>();
+                int filledIn = 0;
+                for (String key : PermissionCatalog.keys()) {
+                    if (current.containsKey(key)) {
+                        merged.put(key, Boolean.TRUE.equals(current.get(key)));
+                    } else {
+                        boolean granted2 = grantedSet.contains(key);
+                        merged.put(key, granted2);
+                        filledIn++;
+                        if (granted2) {
+                            newlyGranted.add(key);
+                        }
+                    }
                 }
 
-                List<String> added = desired.entrySet().stream()
-                        .filter(e -> e.getValue() && !Boolean.TRUE.equals(current.get(e.getKey())))
-                        .map(Map.Entry::getKey).sorted().toList();
-                List<String> removed = current.entrySet().stream()
-                        .filter(e -> Boolean.TRUE.equals(e.getValue())
-                                && !Boolean.TRUE.equals(desired.get(e.getKey())))
-                        .map(Map.Entry::getKey).sorted().toList();
+                if (merged.equals(current)) {
+                    continue; // nothing new to fill in - stay silent
+                }
 
-                role.setPermissions(objectMapper.writeValueAsString(desired));
+                List<String> dropped = current.keySet().stream()
+                        .filter(key -> !merged.containsKey(key))
+                        .sorted().toList();
+
+                role.setPermissions(objectMapper.writeValueAsString(merged));
                 roleRepository.save(role);
 
-                log.info("Role {}: granted {}, revoked {}.", role.getName(),
-                        added.isEmpty() ? "nothing" : added,
-                        removed.isEmpty() ? "nothing" : removed);
+                log.info("Role {}: {} new key(s), granted {}{}.", role.getName(), filledIn,
+                        newlyGranted.isEmpty() ? "none" : newlyGranted,
+                        dropped.isEmpty() ? "" : ", dropped unknown " + dropped);
             } catch (Exception e) {
                 log.error("Could not normalise permissions for role {}: {}",
                         role.getName(), e.getMessage());
