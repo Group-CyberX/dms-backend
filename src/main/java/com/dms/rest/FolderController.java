@@ -54,8 +54,14 @@ public class FolderController {
      */
     @GetMapping("/tree")
     public FolderTreeNodeDTO getTree(
-            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all) {
-        UUID ownerId = all ? null : com.dms.security.SecurityUtils.currentUserId();
+            @RequestParam(value = "all", required = false, defaultValue = "false") boolean all,
+            org.springframework.security.core.Authentication auth) {
+        // Honoured only for a role that may see everyone's documents, exactly as
+        // GET /api/documents/page decides it. Without the same gate an end user
+        // could read the whole organisation's document counts from the folder
+        // badges while their own list correctly showed nothing.
+        boolean maySeeEveryones = permissionService.hasPermission(auth, "canViewAllDocuments");
+        UUID ownerId = (all && maySeeEveryones) ? null : com.dms.security.SecurityUtils.currentUserId();
         return folderTreeService.getFullTree(ownerId);
     }
 
