@@ -5,6 +5,7 @@ import com.dms.dao.AuditLogRepository;
 import com.dms.dao.DocumentRepository;
 import com.dms.dao.ErpConnectionRepository;
 import com.dms.dao.NotificationRepository;
+import com.dms.dao.DashboardCountsRepository;
 import com.dms.dao.UserRepository;
 import com.dms.dao.WorkflowInstanceRepository;
 import com.dms.dao.WorkflowTaskRepository;
@@ -46,6 +47,7 @@ public class DashboardService {
     private static final Collection<String> OPEN_TASK_STATUSES =
             List.of(WorkflowConstants.TASK_ACTIVE, WorkflowConstants.TASK_PENDING);
 
+    private final DashboardCountsRepository dashboardCountsRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final WorkflowInstanceRepository instanceRepository;
@@ -60,7 +62,8 @@ public class DashboardService {
                             WorkflowTaskRepository taskRepository,
                             NotificationRepository notificationRepository,
                             AuditLogRepository auditLogRepository,
-                            ErpConnectionRepository erpConnectionRepository) {
+                            ErpConnectionRepository erpConnectionRepository,
+                            DashboardCountsRepository dashboardCountsRepository) {
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
         this.instanceRepository = instanceRepository;
@@ -68,6 +71,7 @@ public class DashboardService {
         this.notificationRepository = notificationRepository;
         this.auditLogRepository = auditLogRepository;
         this.erpConnectionRepository = erpConnectionRepository;
+        this.dashboardCountsRepository = dashboardCountsRepository;
     }
 
     public DashboardSummary summarise(User caller) {
@@ -78,20 +82,42 @@ public class DashboardService {
         // count as "waiting on me" - the same rule the My Tasks screen uses.
         List<String> assignees = List.of(String.valueOf(userId), roleName);
 
+        // All twelve figures in a single round trip. Asked for one at a time
+        // they were a dozen separate trips to a database that is not on this
+        // machine, which is where the panel spent nearly all of its time.
+        DashboardCountsRepository.DashboardCounts counts = dashboardCountsRepository.loadAll(
+                userId,
+                String.valueOf(userId),
+                upper(RUNNING_WORKFLOW_STATUSES),
+                upper(OPEN_TASK_STATUSES),
+                upper(assignees));
+
         return new DashboardSummary(
-                userRepository.count(),
-                documentRepository.countActive(),
-                documentRepository.countActiveByOwner(userId),
-                documentRepository.countDeleted(),
-                instanceRepository.countByStatusIgnoreCaseIn(RUNNING_WORKFLOW_STATUSES),
-                instanceRepository.countByStatusIgnoreCaseIn(List.of(WorkflowConstants.WORKFLOW_APPROVED)),
-                instanceRepository.countByCreatedByUserId(String.valueOf(userId)),
-                taskRepository.countByStatusIgnoreCaseInAndUserIdIgnoreCaseIn(OPEN_TASK_STATUSES, assignees),
-                notificationRepository.countByUserIdAndIsReadFalse(userId),
-                erpConnectionRepository.count(),
-                auditLogRepository.count(),
-                auditLogRepository.countByStatusIgnoreCase("FAILED"),
+                value(counts == null ? null : counts.getUserCount()),
+                value(counts == null ? null : counts.getActiveDocuments()),
+                value(counts == null ? null : counts.getMyDocuments()),
+                value(counts == null ? null : counts.getDeletedDocuments()),
+                value(counts == null ? null : counts.getRunningWorkflows()),
+                value(counts == null ? null : counts.getApprovedWorkflows()),
+                value(counts == null ? null : counts.getMyWorkflows()),
+                value(counts == null ? null : counts.getMyOpenTasks()),
+                value(counts == null ? null : counts.getUnreadNotifications()),
+                value(counts == null ? null : counts.getErpConnections()),
+                value(counts == null ? null : counts.getAuditEntries()),
+                value(counts == null ? null : counts.getFailedAuditEntries()),
                 slaAlerts(userId, roleName));
+    }
+
+    private static long value(Long count) {
+        return count == null ? 0L : count;
+    }
+
+    /** The query compares in upper case, so the values it is given must match. */
+    private static Collection<String> upper(Collection<String> values) {
+        return values.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(v -> v.toUpperCase())
+                .toList();
     }
 
     /**

@@ -110,8 +110,9 @@ public class SearchService {
     /**
      * Universal search across title, metadata, and tags
      */
-    public List<SearchResponseDTO> universalSearch(String searchTerm) {
-        List<Documents> results = documentRepository.universalSearchIncludingTags(searchTerm);
+    public List<SearchResponseDTO> universalSearch(String searchTerm, UUID ownerId) {
+        List<Documents> results = documentRepository.universalSearchIncludingTags(
+                searchTerm, ownerId == null ? null : ownerId.toString());
 
         return results.stream()
                 .map(this::mapToDTO)
@@ -121,8 +122,9 @@ public class SearchService {
     /**
      * Search documents by tag name
      */
-    public List<SearchResponseDTO> searchByTag(String tagName) {
-        List<Documents> results = documentRepository.searchByTag(tagName);
+    public List<SearchResponseDTO> searchByTag(String tagName, UUID ownerId) {
+        List<Documents> results = documentRepository.searchByTag(
+                tagName, ownerId == null ? null : ownerId.toString());
 
         return results.stream()
                 .map(this::mapToDTO)
@@ -132,8 +134,8 @@ public class SearchService {
     /**
      * Advanced Search with multiple metadata filters
      */
-    public List<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters) {
-        return advancedSearch(filters, 0, Integer.MAX_VALUE).getContent();
+    public List<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, UUID ownerId) {
+        return advancedSearch(filters, 0, Integer.MAX_VALUE, ownerId).getContent();
     }
 
     /**
@@ -150,14 +152,21 @@ public class SearchService {
      * they now run over a candidate set the database has already narrowed, and
      * the response is bounded regardless of how many documents match.
      */
-    public Page<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, int page, int size) {
+    public Page<SearchResponseDTO> advancedSearch(AdvancedSearchRequestDTO filters, int page, int size,
+                                                  UUID ownerId) {
         List<Documents> docs;
+
+        // Scoped by the database. Without this an end user searching saw every
+        // document in the system, including ones they cannot open.
+        String owner = ownerId == null ? null : ownerId.toString();
 
         // 1. Initial filtered set using text query if present
         if (filters.getQuery() != null && !filters.getQuery().trim().isEmpty()) {
-            docs = documentRepository.universalSearchIncludingTags(filters.getQuery().trim());
+            docs = documentRepository.universalSearchIncludingTags(filters.getQuery().trim(), owner);
         } else {
-            docs = documentRepository.findAllActive();
+            docs = ownerId == null
+                    ? documentRepository.findAllActive()
+                    : documentRepository.findAllActiveByOwner(ownerId);
         }
 
         // One query for the workflow status of every candidate, instead of one

@@ -3,8 +3,11 @@ package com.dms.service;
 import com.dms.dao.DocumentRepository;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Shared validation logic for both single and multipart file uploads
@@ -17,7 +20,14 @@ import java.util.regex.Pattern;
 @Component
 public class FileUploadValidator {
 
-    private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
+    /**
+     * What this system can actually store, process and preview.
+     *
+     * The Allowed File Types setting chooses from within this list; it cannot
+     * add to it, because permitting a format nothing downstream can read would
+     * only move the failure from upload to preview.
+     */
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
             "pdf", "docx", "xlsx", "png", "jpg", "jpeg"
     );
 
@@ -29,9 +39,9 @@ public class FileUploadValidator {
             "image/jpeg"
     );
 
+    /** Name shape only - which extensions are permitted is decided separately. */
     private static final Pattern SAFE_FILENAME = Pattern.compile(
-            "^[A-Za-z0-9_-]+\\.(pdf|docx|xlsx|png|jpg|jpeg)$",
-            Pattern.CASE_INSENSITIVE
+            "^[A-Za-z0-9_-]+\\.[A-Za-z0-9]+$"
     );
 
     private static final Set<String> ALLOWED_CATEGORIES = Set.of(
@@ -43,9 +53,39 @@ public class FileUploadValidator {
     );
 
     private final DocumentRepository documentRepository;
+    private final SettingsService settingsService;
 
-    public FileUploadValidator(DocumentRepository documentRepository) {
+    public FileUploadValidator(DocumentRepository documentRepository,
+                               SettingsService settingsService) {
         this.documentRepository = documentRepository;
+        this.settingsService = settingsService;
+    }
+
+    /**
+     * The extensions currently accepted, from the Allowed File Types setting.
+     *
+     * Read at upload time, which is the only place it is needed - no listing or
+     * page load consults it. Anything the setting names that this system cannot
+     * process is ignored, and an empty or unreadable setting falls back to
+     * everything supported rather than blocking uploads outright.
+     */
+    private Set<String> allowedExtensions() {
+        try {
+            Object configured = settingsService.organisationSettings().get("allowedFileTypes");
+            if (configured != null && !String.valueOf(configured).isBlank()) {
+                Set<String> chosen = Arrays.stream(String.valueOf(configured).split(","))
+                        .map(v -> v.trim().toLowerCase())
+                        .filter(v -> !v.isEmpty())
+                        .filter(SUPPORTED_EXTENSIONS::contains)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                if (!chosen.isEmpty()) {
+                    return chosen;
+                }
+            }
+        } catch (Exception e) {
+            // A settings problem must never stop people uploading.
+        }
+        return SUPPORTED_EXTENSIONS;
     }
 
     /**
@@ -59,12 +99,17 @@ public class FileUploadValidator {
 
         String original = sanitizeOriginalFilename(fileName);
         if (original == null || !SAFE_FILENAME.matcher(original).matches()) {
-            return "Invalid file name. Extension must be pdf, docx, xlsx, png, jpg, jpeg.";
+            return "Invalid file name. Use letters, numbers, dashes or underscores, "
+                    + "followed by the file extension.";
         }
 
+        Set<String> allowed = allowedExtensions();
         String ext = getFileExtension(original);
-        if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
-            return "Unsupported file extension: ." + ext;
+        if (ext == null || !allowed.contains(ext.toLowerCase())) {
+            // Names the formats actually in force, so the message and the
+            // Allowed File Types setting can never disagree.
+            return "Unsupported file type. Allowed: "
+                    + allowed.stream().sorted().collect(Collectors.joining(", ")) + ".";
         }
 
         return null; // Valid
@@ -98,7 +143,7 @@ public class FileUploadValidator {
 
         if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
             // If reported content type is not in allowlist, still allow if extension is allowed
-            if (ext == null || !ALLOWED_EXTENSIONS.contains(ext.toLowerCase())) {
+            if (ext == null || !SUPPORTED_EXTENSIONS.contains(ext.toLowerCase())) {
                 return "Unsupported file type: " + contentType;
             }
         }

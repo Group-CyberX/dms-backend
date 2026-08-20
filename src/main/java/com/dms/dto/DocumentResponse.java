@@ -15,6 +15,8 @@ public class DocumentResponse {
     private Long file_size;
     private boolean is_locked;
     private boolean is_deleted;
+    /** NEW until a workflow is started on it, then that workflow's status. */
+    private String status;
 
     public DocumentResponse() {
     }
@@ -120,5 +122,13 @@ public class DocumentResponse {
 
     public void setIs_deleted(boolean is_deleted) {
         this.is_deleted = is_deleted;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 }
