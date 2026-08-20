@@ -82,10 +82,27 @@ public class ErpMappingService {
 
     /**
      * Sensible starting mappings for a brand-new connection, so the demo does not
-     * begin with an empty mapping table. Matches the field names the mock ERP
-     * emits; a real deployment would edit these in the UI.
+     * begin with an empty mapping table. Which field names get seeded depends on
+     * which demo backend the connection is actually going to talk to - the bundled
+     * mock ERP and the standalone Nexus ERP use different field-naming conventions
+     * on purpose (see ERP_INTEGRATION_EXPLAINED.md), and seeding the wrong one means
+     * every sync silently matches nothing. A real deployment would still edit these
+     * in the UI to match whatever that vendor's API actually returns.
      */
-    public List<IntegrationMapping> defaultMappings(UUID connectionId) {
+    public List<IntegrationMapping> defaultMappings(UUID connectionId, String erpType) {
+        if ("NEXUS".equalsIgnoreCase(erpType)) {
+            return List.of(
+                    mapping(connectionId, "PURCHASE_ORDER", "poNumber", "poNumber", true),
+                    mapping(connectionId, "PURCHASE_ORDER", "vendorName", "vendor", false),
+                    mapping(connectionId, "PURCHASE_ORDER", "amount", "amount", false),
+                    mapping(connectionId, "PURCHASE_ORDER", "status", "erpStatus", false)
+                    // Nexus ERP has no invoices endpoint, so no INVOICE rows are seeded.
+            );
+        }
+
+        // GENERIC / SAP / ORACLE / DYNAMICS / INFOR / EPICOR all fall back to the
+        // bundled mock ERP's field names - the only one of these actually
+        // reachable without a real vendor tenant.
         return List.of(
                 mapping(connectionId, "PURCHASE_ORDER", "PurchaseOrderNo", "poNumber", true),
                 mapping(connectionId, "PURCHASE_ORDER", "VendorName", "vendor", false),

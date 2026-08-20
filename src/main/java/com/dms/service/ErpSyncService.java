@@ -6,6 +6,8 @@ import com.dms.dto.ErpConnectionDTOs.SyncResult;
 import com.dms.models.ErpConnection;
 import com.dms.models.ErpTransaction;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +47,13 @@ public class ErpSyncService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final RestClient restClient = RestClient.builder().build();
 
+    // Self-reference through the Spring proxy so that the @Transactional on
+    // persistSync() is honoured when called from sync() in the same bean.
+    // @Lazy breaks the circular dependency that a direct self-injection would cause.
+    @Lazy
+    @Autowired
+    private ErpSyncService self;
+
     public ErpSyncService(ErpConnectionRepository connectionRepository,
                           ErpTransactionRepository transactionRepository,
                           ErpConnectionService connectionService,
@@ -62,44 +71,82 @@ public class ErpSyncService {
     /**
      * Fetches every supported record type from one ERP, upserts the transactions,
      * then tries to link any document whose extracted text mentions them.
+     *
+     * The HTTP fetch and the DB writes are deliberately separated: holding a
+     * connection open while waiting for an external HTTP response was exhausting
+     * HikariCP's small pool (maximum-pool-size=3) and causing
+     * "Could not open JPA EntityManager" errors on any concurrent request.
+     * Now the network calls finish first and the connection is only acquired for
+     * the short DB write phase.
      */
-    @Transactional
     public SyncResult sync(UUID connectionId, String remoteAddr) {
         ErpConnection connection = connectionService.require(connectionId);
 
-        int fetched = 0;
-        int created = 0;
-        int linked = 0;
-        String failure = null;
+        // Phase 1: fetch all records over HTTP — NO database connection held.
+        Map<String, List<Map<String, Object>>> fetchedByEndpoint = new java.util.LinkedHashMap<>();
+        Map<String, String> fetchErrors = new java.util.LinkedHashMap<>();
 
         for (Map.Entry<String, String> endpoint : ENDPOINTS.entrySet()) {
             try {
                 List<Map<String, Object>> records = fetchRecords(connection, endpoint.getKey());
-                fetched += records.size();
+                fetchedByEndpoint.put(endpoint.getKey(), records);
+            } catch (Exception e) {
+                fetchErrors.put(endpoint.getKey(), e.getMessage());
+            }
+        }
 
+        // Phase 2: persist everything in a single transaction via the proxy.
+        return self.persistSync(connectionId, connection, fetchedByEndpoint, fetchErrors, remoteAddr);
+    }
+
+    /** Runs inside a transaction; called only after all HTTP work is done. */
+    @Transactional
+    protected SyncResult persistSync(UUID connectionId,
+                                     ErpConnection connection,
+                                     Map<String, List<Map<String, Object>>> fetchedByEndpoint,
+                                     Map<String, String> fetchErrors,
+                                     String remoteAddr) {
+        int fetched = 0;
+        int created = 0;
+        String failure = null;
+
+        for (Map.Entry<String, String> endpoint : ENDPOINTS.entrySet()) {
+            String path = endpoint.getKey();
+            String type = endpoint.getValue();
+
+            if (fetchErrors.containsKey(path)) {
+                failure = path + ": " + fetchErrors.get(path);
+                recordFailure(connection, type, failure);
+                continue;
+            }
+
+            List<Map<String, Object>> records = fetchedByEndpoint.getOrDefault(path, List.of());
+            fetched += records.size();
+
+            try {
                 for (Map<String, Object> record : records) {
                     Optional<String> reference =
-                            mappingService.extractReference(connectionId, endpoint.getValue(), record);
+                            mappingService.extractReference(connectionId, type, record);
                     if (reference.isEmpty()) {
-                        continue; // nothing to key it on - skip rather than store junk
+                        continue;
                     }
 
                     Map<String, Object> mapped =
-                            mappingService.toDmsFields(connectionId, endpoint.getValue(), record);
+                            mappingService.toDmsFields(connectionId, type, record);
 
-                    boolean isNew = upsert(connection, endpoint.getValue(), reference.get(), mapped);
+                    boolean isNew = upsert(connection, type, reference.get(), mapped);
                     if (isNew) {
                         created++;
                     }
                 }
             } catch (Exception e) {
-                failure = endpoint.getKey() + ": " + e.getMessage();
-                recordFailure(connection, endpoint.getValue(), failure);
+                failure = path + ": " + e.getMessage();
+                recordFailure(connection, type, failure);
             }
         }
 
         // Newly arrived transactions may match documents uploaded earlier.
-        linked = linkService.linkPendingDocuments();
+        int linked = linkService.linkPendingDocuments();
 
         boolean success = failure == null;
         connection.setStatus(success ? "OK" : "FAILED");
