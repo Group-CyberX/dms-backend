@@ -8,15 +8,17 @@ public class UploadDocumentRequest {
     private String category;
     private String tags;
     private String description;
+    private String poNumber;
 
     public UploadDocumentRequest() {}
 
-    public UploadDocumentRequest(String title, UUID folderId, String category, String tags, String description) {
+    public UploadDocumentRequest(String title, UUID folderId, String category, String tags, String description, String poNumber) {
         this.title = title;
         this.folderId = folderId;
         this.category = category;
         this.tags = tags;
         this.description = description;
+        this.poNumber = poNumber;
     }
 
     public String getTitle() {
@@ -57,5 +59,13 @@ public class UploadDocumentRequest {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPoNumber() {
+        return poNumber;
+    }
+
+    public void setPoNumber(String poNumber) {
+        this.poNumber = poNumber;
     }
 }

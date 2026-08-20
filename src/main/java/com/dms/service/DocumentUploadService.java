@@ -38,6 +38,7 @@ public class DocumentUploadService {
     private final TagService tagService;
     private final ProcessingJobService processingJobService;
     private final SettingsService settingsService; // Added job service
+    private final ErpDocumentLinkService erpDocumentLinkService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
@@ -108,6 +109,7 @@ public class DocumentUploadService {
 
     public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService,
                                  SettingsService settingsService) {
+    public DocumentUploadService(DocumentRepository documentRepository, DocumentVersionRepository documentVersionRepository, FolderRepository folderRepository, software.amazon.awssdk.services.s3.S3Client s3Client, TagService tagService, DocumentMetadataRepository documentMetadataRepository, MetadataExtractorService metadataExtractorService, ProcessingJobService processingJobService, ErpDocumentLinkService erpDocumentLinkService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.folderRepository = folderRepository;
@@ -117,6 +119,7 @@ public class DocumentUploadService {
         this.metadataExtractorService = metadataExtractorService;
         this.processingJobService = processingJobService;
         this.settingsService = settingsService;
+        this.erpDocumentLinkService = erpDocumentLinkService;
     }
 
     @Transactional
@@ -305,6 +308,12 @@ public class DocumentUploadService {
             boolean hasSignature = metadataExtractorService.hasDigitalSignature(file);
             String sigStatusValue = hasSignature ? "signed" : "unsigned";
             documentMetadataRepository.save(new DocumentMetadata(document, "signatureStatus", sigStatusValue));
+
+            // Explicit ERP linking from UI context
+            if (request.getPoNumber() != null && !request.getPoNumber().isBlank()) {
+                System.out.println("[SINGLE_UPLOAD] Triggering explicit ERP linking for reference: " + request.getPoNumber());
+                erpDocumentLinkService.linkExactReference(documentId, request.getPoNumber());
+            }
 
             System.out.println("[SINGLE_UPLOAD] Upload successful!");
             System.out.println("[SINGLE_UPLOAD] Document ID: " + documentId);

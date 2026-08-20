@@ -81,7 +81,7 @@ public class ErpController {
 
         // Seed the default field mappings so a new connection is immediately
         // usable and the mapping screen is never empty.
-        mappingRepository.saveAll(mappingService.defaultMappings(created.connectionId()));
+        mappingRepository.saveAll(mappingService.defaultMappings(created.connectionId(), created.erpType()));
 
         return ResponseEntity.ok(created);
     }

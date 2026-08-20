@@ -408,6 +408,7 @@ public class DocumentController {
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "tags", required = false) String tags,
             @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "poNumber", required = false) String poNumber,
             Authentication auth,
             HttpServletRequest request) {
 
@@ -424,7 +425,7 @@ public class DocumentController {
         String ip = getClientIp(request);
 
         try {
-            UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description);
+            UploadDocumentRequest uploadReq = new UploadDocumentRequest(title, folderId, category, tags, description, poNumber);
             DocumentUploadResponse response = documentUploadService.uploadDocument(file, uploadReq, user.getUserId());
 
             if (!response.isSuccess()) {
